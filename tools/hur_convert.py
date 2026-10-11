@@ -271,6 +271,58 @@ def sprite_file(entries):
 
 
 # ------------------------------------------------------------------ packs
+# ---------------------------------------------------------------- the Genesis background (genbg)
+GBG_W, GBG_H = 256, 224          # the picture on the plane: 32 x 28 tiles, repeated across 64
+GBG_TILE0 = 128                  # VRAM tile 128 (0x1000) on: the font stays below
+
+
+def genesis_bg(rgb):
+    """GENBG.BIN from the stage's far background (an RGB array): 15 colours (Genesis 3-bit),
+    8x8 tiles deduplicated (also mirrored), a 64x32 plane map (palette line 3).
+      "GBG1", u16 tiles, u16 0, 16 x u16 CRAM words (0 unused), 64 x 32 u16 map, tiles x 32 bytes"""
+    im = Image.fromarray(rgb[:, :, :3].astype(np.uint8)).resize((GBG_W, GBG_H), Image.LANCZOS)
+    q = im.quantize(colors=15, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    pal = np.array(q.getpalette()[:45], np.int32).reshape(-1, 3)
+    pal3 = (pal + 16) // 32                       # 0..8 -> the Genesis' 3 bits
+    pal3 = np.clip(pal3, 0, 7)
+    idx = np.array(q, np.uint8) + 1               # 1..15
+    cram = [0] + [int((b << 9) | (g << 5) | (r << 1)) for r, g, b in pal3]
+    cram += [0] * (16 - len(cram))
+    tiles, lookup, tmap = [], {}, np.zeros((GBG_H // 8, GBG_W // 8), np.int32)
+    for ty in range(GBG_H // 8):
+        for tx in range(GBG_W // 8):
+            t = idx[ty * 8:ty * 8 + 8, tx * 8:tx * 8 + 8]
+            word = None
+            for hf in (0, 1):
+                for vf in (0, 1):
+                    v = t[:, ::-1] if hf else t
+                    v = v[::-1, :] if vf else v
+                    k = v.tobytes()
+                    if k in lookup:
+                        word = lookup[k] | (hf << 11) | (vf << 12)
+                        break
+                if word is not None:
+                    break
+            if word is None:
+                n = GBG_TILE0 + len(tiles)
+                tiles.append(t.copy())
+                lookup[t.tobytes()] = n
+                word = n
+            tmap[ty, tx] = word | (3 << 13)
+    plane = np.zeros((32, 64), np.int32)
+    for r in range(32):
+        for c in range(64):
+            plane[r, c] = tmap[r % (GBG_H // 8), c % (GBG_W // 8)]
+    tbytes = bytearray()
+    for t in tiles:
+        for row in t:
+            for i in range(0, 8, 2):
+                tbytes.append(int(row[i]) << 4 | int(row[i + 1]))
+    out = b"GBG1" + struct.pack(">HH", len(tiles), 0) + b"".join(struct.pack(">H", w) for w in cram)
+    out += b"".join(struct.pack(">H", int(w)) for w in plane.flatten()) + bytes(tbytes)
+    return out, len(tiles)
+
+
 def write_pack(path, files, limit):
     """OJPK version 2 with files only (port/pack.h)"""
     n = len(files)
@@ -546,8 +598,12 @@ def stage_pack(data_dir, out_dir, stage, tex, res_palette, res_mapper_unused):
         struct.pack(">HhhhhH", oid & 0xFFFF, clamp(x), clamp(y), clamp(v1), clamp(v2), sk & 0xFFFF)
         for oid, x, y, v1, v2, sk in objs)
 
+    gbg = None
+    if static:
+        gbg, gtiles = genesis_bg(sheets[static[0]])
+        print("  Genesis background: %s, %d tiles (%d KB)" % (static[0], gtiles, len(gbg) // 1024))
     files = [("PALETTE.BIN", pal), ("TILES.BIN", tfile), ("TILEXT.BIN", xfile), ("MAP.BIN", mfile), ("SSPRITES.BIN", sfile),
-             ("OBJECTS.BIN", ofile), ("SHADE.LUT", shade.tobytes()), ("LIGHT.BIN", lfile)]
+             ("OBJECTS.BIN", ofile), ("SHADE.LUT", shade.tobytes()), ("LIGHT.BIN", lfile)] + ([("GENBG.BIN", gbg)] if gbg else [])
     out = os.path.join(out_dir, "OJ%03d.PAK" % stage)
     total = write_pack(out, files, STAGE_MAX)
     print("  stage %d (%s): %d KB - tiles %d (%d KB), map %dx%d: %d cells, %d blocks (%d KB), "

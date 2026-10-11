@@ -26,6 +26,7 @@ static int story_saved_dark;
 static int story_enter(void)
 {
 	plat_music(0);                                   /* no CD data reads while music plays */
+	genbg_off();                                     /* the loading screen's black is see-through */
 	stage_in_cart = 0;                               /* the stage area holds the story now */
 	const int32_t len = plat_load_pack(PACK_LEVEL_ID0 + STORY_PACK, STAGE_CART, STAGE_MAX);
 	if (len <= 0 || !pack_mount_at(1, plat_cart_ptr(STAGE_CART))) { music(TRACK_MENU); return 0; }

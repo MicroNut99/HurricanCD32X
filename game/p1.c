@@ -3030,6 +3030,9 @@ static void load_resident(void)
 /* stage n's pack from the disc (the platform shows the loading screen meanwhile). The CD
  * plays no music while it reads data (Kobo rule): the music stops first. */
 static int stage_in_cart;          /* the stage whose pack is in the RAM cart (0 = none yet) */
+static void genbg_off(void);
+static void genbg_load(void);
+static void genbg_scroll(void);
 static void load_stage(int n)
 {
 	/* the pack of the stage loaded last is still in the cart (the SH2 only reads it): playing
@@ -3038,6 +3041,7 @@ static void load_stage(int n)
 	if (n != stage_in_cart)
 	{
 		stage_in_cart = 0;
+		genbg_off();                    /* the loading screen's black is see-through */
 		plat_music(0);
 		len = plat_load_pack(PACK_LEVEL_ID0 + n, STAGE_CART, STAGE_MAX);
 	}
@@ -3074,8 +3078,59 @@ static void load_stage(int n)
 	shade = need("SHADE.LUT");
 	load_pictures();
 	kinds_init();
+	genbg_load();                       /* the stage's far background on the Genesis (genbg) */
 }
 
+
+
+/* ------------------------------------------------------------------ the Genesis background (genbg)
+ * The stage's far background (GENBG.BIN, tools/hur_convert.py) on the Genesis' plane B behind
+ * the 32X picture: the Sub-CPU's CMD 62 (cd32x/subcpu/main.c) loads it from the cart and sets
+ * its scroll; colour 0 of the stage (the empty sky) gets the 32X's priority bit, so the Genesis
+ * shows through there. PAUSE - BACKDROP ON / OFF. The PC draws no Genesis plane. */
+static int genbg_on, genbg_want = 1;
+#ifdef OJ32X_MARS
+#define GB_COMM0  (*(volatile uint16_t *)0x20004020)
+#define GB_COMM2  (*(volatile uint16_t *)0x20004022)
+#define GB_COMM8  (*(volatile uint16_t *)0x20004028)
+#define GB_COMM8L (*(volatile uint32_t *)0x20004028)
+#define GB_COMM12 (*(volatile uint16_t *)0x2000402C)
+static int genbg_cmd(int sub)
+{
+	GB_COMM2 = (uint16_t)sub;
+	GB_COMM0 = 62;
+	for (uint32_t n = 0; n < 8000000u && GB_COMM0 != 0; n++) { }
+	return GB_COMM0 == 0;
+}
+static void genbg_off(void)
+{
+	if (!genbg_on) return;
+	genbg_cmd(0);
+	genbg_on = 0;
+	palette[0] &= 0x7FFF;
+}
+static void genbg_load(void)
+{
+	const uint8_t *g;
+	uint32_t size;
+	genbg_on = 0;
+	if (!genbg_want || !pack_file("GENBG.BIN", &g, &size)) return;
+	GB_COMM8L = (uint32_t)(g - plat_cart_ptr(0));
+	GB_COMM12 = 0;
+	if (genbg_cmd(1) && GB_COMM12 == 1) { genbg_on = 1; palette[0] |= 0x8000; }
+}
+static void genbg_scroll(void)
+{
+	if (!genbg_on) return;
+	GB_COMM8 = (uint16_t)(-(draw_cx / 5));          /* Hurrican: the far picture at a fifth */
+	GB_COMM12 = 0;
+	genbg_cmd(2);
+}
+#else
+static void genbg_off(void) { genbg_on = 0; }
+static void genbg_load(void) { genbg_on = 0; }
+static void genbg_scroll(void) { }
+#endif
 
 /* ------------------------------------------------------------------ the high scores (P1p)
  * Hurrican's table of the best ten (name, score, stage reached), kept in the Sega CD's backup
@@ -3652,8 +3707,8 @@ int main(int argc, char *argv[])
 		else if (gs == GS_PAUSE)
 		{
 			/* the pause menu: CONTINUE / MAIN MENU / TIMING ON-OFF */
-			if (hit & PAD_UP) pause_sel = (pause_sel + 3) % 4;
-			if (hit & PAD_DOWN) pause_sel = (pause_sel + 1) % 4;
+			if (hit & PAD_UP) pause_sel = (pause_sel + 4) % 5;
+			if (hit & PAD_DOWN) pause_sel = (pause_sel + 1) % 5;
 			if ((hit & PAD_START) || ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 0)) gs = GS_PLAY;
 			else if ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 1)
 			{
@@ -3664,6 +3719,7 @@ int main(int argc, char *argv[])
 			}
 			else if ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 2) show_times ^= 1;
 			else if ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 3) par_on ^= 1;
+			else if ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 4) { genbg_want ^= 1; if (genbg_want) genbg_load(); else genbg_off(); }
 		}
 
 		if (gs == GS_STORY)
@@ -3841,6 +3897,8 @@ int main(int argc, char *argv[])
 			         pause_sel == 2 ? col_yellow : col_light);
 			hud_text(SCREEN_W / 2 - 52, 140, par_on ? (pause_sel == 3 ? "> 2ND CPU ON" : "  2ND CPU ON") : (pause_sel == 3 ? "> 2ND CPU OFF" : "  2ND CPU OFF"),
 			         pause_sel == 3 ? col_yellow : col_light);
+			hud_text(SCREEN_W / 2 - 52, 156, genbg_want ? (pause_sel == 4 ? "> BACKDROP ON" : "  BACKDROP ON") : (pause_sel == 4 ? "> BACKDROP OFF" : "  BACKDROP OFF"),
+			         pause_sel == 4 ? col_yellow : col_light);
 		}
 		if (gs == GS_CLEAR) hud_text(SCREEN_W / 2 - 48, 84, "STAGE CLEAR", col_light);
 		if (gs == GS_OVER) hud_text(SCREEN_W / 2 - 36, 84, "GAME OVER", col_light);
@@ -3902,6 +3960,7 @@ int main(int argc, char *argv[])
 #endif
 		plat_border_colour(0);
 		plat_present_scroll(palette, (int)((draw_cy + draw_cx / RING_W) % VIEW_H), draw_cx % RING_W, VIEW_H);
+		genbg_scroll();
 		t1 = plat_prof_us(); tacc[T_HUD] += t1 - t0;
 		frame++;
 	}

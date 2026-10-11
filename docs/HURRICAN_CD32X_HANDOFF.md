@@ -280,3 +280,22 @@ Disc: `sega/HurricanP1c/HurricanP1c.cue`.
   TILEXT.BIN (tools/hur_convert.py), empty rows skipped, one layer without light copied straight
   from the tile. Frames the same as before (checked picture for picture on the PC).
 - Disc: `sega/HurricanP1q/HurricanP1q.cue`.
+
+## BG1 (branch genbg - a test of the Genesis background; changes the Sub-CPU program)
+- tools/hur_convert.py: GENBG.BIN in each stage pack from its far background (static_*.png):
+  256 x 224, 15 colours (Genesis 3-bit), 8x8 tiles deduplicated with mirroring (530-870 a
+  stage), a 64x32 plane map (palette line 3, tiles from VRAM 0x1000), the picture repeated
+  across the plane.
+- cd32x/subcpu/hw_md.s: Genesis command 36 set_scroll (H-scroll table 0xAC00, VSRAM 0/2), the
+  command table to 37. cd32x/subcpu/main.c: CMD 62 - 1 load (COMM8 32 bits = the cart offset;
+  the 68000 reads the cart through the 1 MB window, bank 0xA15104, into CRAM 48-63, plane B at
+  0xE000 and VRAM 0x1000; plane A cleared; display on; COMM12 = 1), 2 scroll (COMM8 h, COMM12
+  v), 0 display off.
+- game/p1.c genbg_*: loaded with the stage (display off before a pack is read: the loading
+  screen's black is see-through), colour 0 of the stage with the 32X's priority bit (the
+  Genesis shows through the empty sky), the far picture scrolled at a fifth each frame (one
+  CMD 62 a frame). PAUSE - BACKDROP ON / OFF.
+- Not checked on the PC (no Genesis there) and the 68000 code was not assembled here (no m68k
+  tools in this workspace): the first build on the user's PC assembles it.
+- Disc: `sega/HurricanBG1/HurricanBG1.cue`.
+
