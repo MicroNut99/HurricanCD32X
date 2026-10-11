@@ -274,3 +274,9 @@ Disc: `sega/HurricanP1c/HurricanP1c.cue`.
   HB_HSTEST=score shows the name entry at once.
 - Disc: `sega/HurricanP1p/HurricanP1p.cue`.
 
+
+## P1q
+- The wall pass over the sprites (over_rect, the OVR time): each tile row's drawn part from
+  TILEXT.BIN (tools/hur_convert.py), empty rows skipped, one layer without light copied straight
+  from the tile. Frames the same as before (checked picture for picture on the PC).
+- Disc: `sega/HurricanP1q/HurricanP1q.cue`.

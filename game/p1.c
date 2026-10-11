@@ -94,6 +94,7 @@ static inline uint32_t rd32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (u
 static uint16_t palette[256];
 static int col_dark, col_light, col_red, col_yellow, col_green, col_grey;
 static const uint8_t *tile_px;
+static const uint8_t *tile_ext;          /* TILEXT.BIN: each tile row's drawn part (0 = not in the pack) */
 static int ntiles;
 static const uint8_t *map_cells, *map_blockmap, *map_blocks;
 static int map_w, map_h, map_bw;                 /* tiles */
@@ -359,19 +360,35 @@ FAST static void over_rect(int x0, int y0, int x1, int y1)
 			if (cx1 > x1) cx1 = x1;
 			if (cy0 < y0) cy0 = y0;
 			if (cy1 > y1) cy1 = y1;
+			/* P1q: each tile row's drawn part (TILEXT.BIN): empty rows skipped, only the drawn
+			 * part gone over; one layer without light: copied straight from the tile */
+			const uint8_t *eb = ob && tile_ext ? tile_ext + 10 * ob : 0, *ef = of && tile_ext ? tile_ext + 10 * of : 0;
 			for (int y = cy0; y < cy1; y++)
 			{
-				const int base = (y - ty * 10) * 10 - tx * 10;
+				const int ry = y - ty * 10;
+				int lo = 10, hi = -1;
+				if (eb) { const int v = eb[ry]; if (v != 0xFF) { lo = v >> 4; hi = v & 15; } }
+				else if (ob) { lo = 0; hi = 9; }
+				if (ef) { const int v = ef[ry]; if (v != 0xFF) { if ((v >> 4) < lo) lo = v >> 4; if ((v & 15) > hi) hi = v & 15; } }
+				else if (of) { lo = 0; hi = 9; }
+				if (hi < lo) continue;
+				int a = tx * 10 + lo, e = tx * 10 + hi + 1;
+				if (a < cx0) a = cx0;
+				if (e > cx1) e = cx1;
+				if (a >= e) continue;
+				const int base = ry * 10 - tx * 10;
 				const uint8_t *qb = ob ? tile_px + 100 * ob + base : 0;
 				const uint8_t *qf = of ? tile_px + 100 * of + base : 0;
-				for (int x = cx0; x < cx1; x++)
+				if (!qb && !sf) { fb_put(lin_of(a, y), qf + a, e - a, 1); continue; }
+				if (!qf && !sb) { fb_put(lin_of(a, y), qb + a, e - a, 1); continue; }
+				for (int x = a; x < e; x++)
 				{
 					uint8_t v = qf ? qf[x] : 0;
 					if (v) { if (sf) v = sf[v]; }
 					else if (qb && (v = qb[x]) && sb) v = sb[v];
-					row[x - cx0] = v;
+					row[x - a] = v;
 				}
-				fb_put(lin_of(cx0, y), row, cx1 - cx0, 1);
+				fb_put(lin_of(a, y), row, e - a, 1);
 			}
 		}
 }
@@ -3039,6 +3056,11 @@ static void load_stage(int n)
 	p = need("TILES.BIN");
 	ntiles = (int)rd32(p + 4);
 	tile_px = p + 12 + ((ntiles + 3) & ~3);
+	{
+		uint32_t xs;
+		tile_ext = pack_file("TILEXT.BIN", &p, &xs) && xs >= 8 + 10u * (uint32_t)ntiles ? p + 8 : 0;
+		p = need("TILES.BIN");
+	}
 	p = need("MAP.BIN");
 	map_w = rd16(p + 4); map_h = rd16(p + 6); map_bw = rd16(p + 8);
 	const int ncells = (int)rd32(p + 12);

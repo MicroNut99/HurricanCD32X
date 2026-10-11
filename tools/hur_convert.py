@@ -43,6 +43,8 @@ File formats (big-endian; all offsets from the start of the file):
                nblocks x 32 bytes: 8 x 8 cells, 4 bits each (the even x in the high bits):
                the cell's light, 0 = none, n = SHADE.LUT row n. Hurrican lights a tile by its
                corners (TileEngine::ComputeCoolLight); here a cell gets the mean of its corners
+  TILEXT.BIN   "TEXT" n u32, then 10 bytes a tile: a row's drawn part, first << 4 | last (0xFF:
+               none) - the wall pass over the sprites (P1q)
   SHADE.LUT    16 x 256 bytes: row n = the palette entry nearest to colour p lit by light n
                (row 0 = no change; entry 0, transparent, stays 0)
   OBJECTS.BIN  "OBJS" n u32; n x {id u16, x s16, y s16, value1 s16, value2 s16, skill u16}:
@@ -460,6 +462,14 @@ def stage_pack(data_dir, out_dir, stage, tex, res_palette, res_mapper_unused):
     flags = bytes([1 if np.all(t != 0) else 0 for t in tiles])
     tile_no = {k: i + 1 for i, k in enumerate(used)}
     tfile = b"TILE" + struct.pack(">II", len(tiles), 100) + flags + b"\0" * (-len(flags) % 4) + b"".join(t.tobytes() for t in tiles)
+    # P1q: each tile row's drawn part (first << 4 | last, 0xFF empty) - the wall pass over the
+    # sprites copies only that part
+    ext = bytearray()
+    for t in tiles:
+        for r in t:
+            nz = np.nonzero(r)[0]
+            ext.append(0xFF if len(nz) == 0 else (int(nz[0]) << 4) | int(nz[-1]))
+    xfile = b"TEXT" + struct.pack(">I", len(tiles)) + bytes(ext)
 
     # map: per cell the four tile numbers, cells deduplicated, 8x8 blocks of cells deduplicated
     lut = np.zeros(65536, np.int32)
@@ -536,7 +546,7 @@ def stage_pack(data_dir, out_dir, stage, tex, res_palette, res_mapper_unused):
         struct.pack(">HhhhhH", oid & 0xFFFF, clamp(x), clamp(y), clamp(v1), clamp(v2), sk & 0xFFFF)
         for oid, x, y, v1, v2, sk in objs)
 
-    files = [("PALETTE.BIN", pal), ("TILES.BIN", tfile), ("MAP.BIN", mfile), ("SSPRITES.BIN", sfile),
+    files = [("PALETTE.BIN", pal), ("TILES.BIN", tfile), ("TILEXT.BIN", xfile), ("MAP.BIN", mfile), ("SSPRITES.BIN", sfile),
              ("OBJECTS.BIN", ofile), ("SHADE.LUT", shade.tobytes()), ("LIGHT.BIN", lfile)]
     out = os.path.join(out_dir, "OJ%03d.PAK" % stage)
     total = write_pack(out, files, STAGE_MAX)
