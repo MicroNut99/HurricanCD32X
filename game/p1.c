@@ -778,6 +778,7 @@ static void sfx(int n) { if (sfx_rank[n] > sfx_rank[sfx_want]) sfx_want = n; }
 
 /* ------------------------------------------------------------------ pictures */
 static Pic P_idle, P_run, P_jump, P_jumpup, P_jumpdiag, P_crouch, P_shootup, P_shootdiag;
+static Pic P_flame[3];
 static Pic P_spread, P_spreadbig, P_flare, P_expl, P_explbig, P_smoke, P_laser, P_pflshot, P_dronebullet, P_canon;
 /* the player's added weapons (Hurrican's resident pictures) */
 static Pic P_plaser, P_plaserbig, P_bounce[3], P_grenade, P_powerline, P_blitz[4], P_blitzbeam, P_rad;
@@ -796,6 +797,7 @@ static void load_pictures(void)
 	P_jumpdiag = pic("p1_hurri_jumpschra"); P_crouch = pic("p1_hurri_crouch.p");
 	P_shootup = pic("p1_hurri_shootup");   P_shootdiag = pic("p1_hurri_shootdia");
 	P_spread = pic("spreadshot.png");      P_spreadbig = pic("spreadshot2.png");
+	P_flame[0] = pic("schussflamme.png"); P_flame[1] = pic("schussflamme2.png"); P_flame[2] = pic("schussflamme3.png");
 	P_flare = pic("shotflare.png");        P_expl = pic("explosion-medium");
 	P_explbig = pic("explosion-big.png");  P_smoke = pic("smoke.png");
 	P_laser = pic("walker-laser.png");     P_pflshot = pic("pflanzeschuss.png");
@@ -897,6 +899,7 @@ typedef struct {
 	fx safe_x, safe_y;         /* the last place stood on safely (to come back to) */
 	fx ground_y;               /* the last height stood at (JumpySave: how high a jump went) */
 	int in_liquid;
+	int flash_t, flash_dx, flash_dy, flash_aim;   /* P1p: the muzzle flame - steps left, the barrel's end from the player's corner, 0 straight / 1 diagonal / 2 up */
 } Player;
 static Player pl;
 
@@ -1931,6 +1934,11 @@ static void player_shoot(void)
 			s->box = pic_box(&P_bounce[0]);
 		}
 	}
+	/* the muzzle flash (Hurrican's shot flare at the barrel), a few steps */
+	pl.flash_t = 4;
+	pl.flash_dx = mx - 2 + P_spreadbig.fw;
+	pl.flash_dy = my - 2 + P_spreadbig.fh;
+	pl.flash_aim = ang == 0 || ang == 180 ? 0 : ang == -90 || ang == 270 ? 2 : 1;
 	sfx(SFX_SHOT);
 }
 
@@ -2374,6 +2382,7 @@ static void player_step(void)
 	}
 
 	/* shooting */
+	if (pl.flash_t > 0) pl.flash_t--;
 	if (pl.shotdelay > 0) pl.shotdelay--;
 	if (fire && pl.shotdelay <= 0)
 	{
@@ -2790,6 +2799,20 @@ static void draw_player(uint32_t t)
 	else p = &P_idle;
 	if (!p->count) p = &P_idle;
 	draw_pic(p, f % (p->count ? p->count : 1), pl.x, pl.y, pl.dir < 0);
+	if (pl.flash_t > 0)
+	{
+		/* Hurrican's muzzle flame (SchussFlamme): straight / diagonal / up, two frames for each
+		 * weapon, its middle a little ahead of the barrel's end */
+		const Pic *fp = &P_flame[pl.flash_aim];
+		if (fp->count)
+		{
+			const int fr = (pl.flash_t & 1) + (pl.sel < 3 ? pl.sel : 0) * 2;
+			const int ahead = pl.flash_aim == 2 ? 0 : fp->fw / 2;
+			const int up = pl.flash_aim == 0 ? 0 : fp->fh / 2;
+			const int x = pl.flash_dx + (pl.dir < 0 ? -ahead : ahead), y = pl.flash_dy - up;
+			draw_pic(fp, fr % fp->count, pl.x + FX(x) - FX(fp->fw), pl.y + FX(y) - FX(fp->fh), pl.dir < 0 && pl.flash_aim != 2);
+		}
+	}
 }
 
 static void draw_world(uint32_t t)
@@ -3031,8 +3054,139 @@ static void load_stage(int n)
 	kinds_init();
 }
 
+
+/* ------------------------------------------------------------------ the high scores (P1p)
+ * Hurrican's table of the best ten (name, score, stage reached), kept in the Sega CD's backup
+ * RAM: the Sub-CPU program's file (main.c K36: CMD 56 load, 57 get / 58 put a word of its
+ * 4 KB buffer, 59 save - no change to it), our 128 bytes at its end (byte 3968, "HSC1"). On the
+ * PC: HB_DIR/HISCORE.BIN. */
+#define HS_N 10
+#define HS_WORD0 1984                    /* 3968 / 2 */
+typedef struct { char name[4]; uint32_t score; uint8_t stage; } HiScore;
+static HiScore hs[HS_N];
+static int hs_new = -1;                  /* the row just entered (shown in yellow) */
+static void hs_defaults(void)
+{
+	static const char *const nm[HS_N] = { "EIS", "POK", "TUR", "RIC", "CAN", "SEG", "MEG", "CDX", "32X", "HUR" };
+	for (int i = 0; i < HS_N; i++)
+	{
+		memcpy(hs[i].name, nm[i], 4);
+		hs[i].score = (uint32_t)(50000 - i * 5000);
+		hs[i].stage = 1;
+	}
+}
+static void hs_unpack(const uint8_t *b)
+{
+	if (b[0] != 'H' || b[1] != 'S' || b[2] != 'C' || b[3] != '1') { hs_defaults(); return; }
+	for (int i = 0; i < HS_N; i++)
+	{
+		const uint8_t *r = b + 4 + 9 * i;
+		for (int k = 0; k < 3; k++) hs[i].name[k] = (char)(r[k] >= 32 && r[k] < 96 ? r[k] : '.');
+		hs[i].name[3] = 0;
+		hs[i].score = (uint32_t)r[3] << 24 | (uint32_t)r[4] << 16 | (uint32_t)r[5] << 8 | r[6];
+		hs[i].stage = r[7];
+	}
+}
+static void hs_pack(uint8_t *b)
+{
+	memset(b, 0, 128);
+	b[0] = 'H'; b[1] = 'S'; b[2] = 'C'; b[3] = '1';
+	for (int i = 0; i < HS_N; i++)
+	{
+		uint8_t *r = b + 4 + 9 * i;
+		memcpy(r, hs[i].name, 3);
+		r[3] = (uint8_t)(hs[i].score >> 24); r[4] = (uint8_t)(hs[i].score >> 16);
+		r[5] = (uint8_t)(hs[i].score >> 8); r[6] = (uint8_t)hs[i].score;
+		r[7] = hs[i].stage;
+	}
+}
+#ifdef OJ32X_MARS
+#define HS_COMM0  (*(volatile uint16_t *)0x20004020)
+#define HS_COMM2  (*(volatile uint16_t *)0x20004022)
+#define HS_COMM8  (*(volatile uint16_t *)0x20004028)
+#define HS_COMM12 (*(volatile uint16_t *)0x2000402C)
+static int hs_cmd(int cmd)
+{
+	HS_COMM0 = (uint16_t)cmd;
+	for (uint32_t n = 0; n < 8000000u && HS_COMM0 != 0; n++) { }
+	return HS_COMM0 == 0;
+}
+static void hs_load(void)
+{
+	uint8_t b[128];
+	HS_COMM12 = 0;
+	if (!hs_cmd(56)) { hs_defaults(); return; }      /* the backup RAM file into the Sub-CPU's buffer */
+	for (int i = 0; i < 64; i++)
+	{
+		HS_COMM2 = (uint16_t)(HS_WORD0 + i);
+		if (!hs_cmd(57)) { hs_defaults(); return; }
+		const uint16_t v = HS_COMM8;
+		b[2 * i] = (uint8_t)(v >> 8); b[2 * i + 1] = (uint8_t)v;
+	}
+	hs_unpack(b);
+}
+static void hs_save(void)
+{
+	uint8_t b[128];
+	hs_pack(b);
+	for (int i = 0; i < 64; i++)
+	{
+		HS_COMM8 = (uint16_t)(b[2 * i] << 8 | b[2 * i + 1]);
+		HS_COMM2 = (uint16_t)(HS_WORD0 + i);
+		if (!hs_cmd(58)) return;
+	}
+	HS_COMM12 = 0;
+	hs_cmd(59);                                      /* the buffer back into the backup RAM file */
+}
+#else
+static void hs_load(void)
+{
+	uint8_t b[128] = { 0 };
+	char path[512];
+	snprintf(path, sizeof path, "%s/HISCORE.BIN", getenv("HB_DIR") ? getenv("HB_DIR") : ".");
+	FILE *f = fopen(path, "rb");
+	if (f) { if (fread(b, 1, 128, f) != 128) b[0] = 0; fclose(f); }
+	hs_unpack(b);
+}
+static void hs_save(void)
+{
+	uint8_t b[128];
+	hs_pack(b);
+	char path[512];
+	snprintf(path, sizeof path, "%s/HISCORE.BIN", getenv("HB_DIR") ? getenv("HB_DIR") : ".");
+	FILE *f = fopen(path, "wb");
+	if (f) { fwrite(b, 1, 128, f); fclose(f); }
+}
+#endif
+/* the place a score would take (-1: not in the table) */
+static int hs_place(uint32_t score)
+{
+	for (int i = 0; i < HS_N; i++) if (score > hs[i].score) return i;
+	return -1;
+}
+static int menu_page, menu_sel;
+static char hs_name[4];
+static int hs_pos;
+static uint32_t hs_score;
+static uint8_t hs_stage;
+/* the game is over (or won): a place in the table - the name is asked for; else the title */
+static void hs_game_end(void)
+{
+	menu_sel = 0;
+	if (!demo && hs_place(pl.score) >= 0)
+	{
+		hs_score = pl.score; hs_stage = (uint8_t)stage;
+		memcpy(hs_name, "AAA", 4);
+		hs_pos = 0;
+		menu_page = 4;
+	}
+	else menu_page = 0;
+}
+/* the name being entered: hs_name, hs_pos (above) */
+static const char hs_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789. ";
+
 /* ------------------------------------------------------------------ the menu */
-static int menu_page, menu_sel, opt_stage = 1, opt_lives = 3, menu_hold;
+static int opt_stage = 1, opt_lives = 3, menu_hold;
 
 /* the menu screen: drawn whole every frame (the view at the world's corner) */
 static void menu_draw(uint32_t frame)
@@ -3040,7 +3194,7 @@ static void menu_draw(uint32_t frame)
 	cam_x = cam_y = view_x = view_y = 0; draw_cx = draw_cy = 0;
 	for (uint32_t l = 0; l < (uint32_t)VIEW_H * RING_W; l += 2) PUT2(ring, l, 0, 0);
 	const Pic logo = pic("hurrican-logo.png");
-	if (logo.count)
+	if (logo.count && menu_page != 3)
 	{
 		Frame f;
 		frame_of(&logo, 0, &f);
@@ -3054,6 +3208,38 @@ static void menu_draw(uint32_t frame)
 		hud_text(SCREEN_W / 2 - 40, 100, "START GAME", menu_sel == 0 ? col_yellow : col_light);
 		hud_text(SCREEN_W / 2 - 28, 118, "OPTIONS", menu_sel == 1 ? col_yellow : col_light);
 		hud_text(menu_sel == 0 ? SCREEN_W / 2 - 56 : SCREEN_W / 2 - 44, menu_sel == 0 ? 100 : 118, ">", col_yellow);
+	}
+	else if (menu_page == 3)
+	{
+		/* the high scores: place, name, score, the stage reached */
+		hud_text(SCREEN_W / 2 - 44, 26, "HIGH SCORES", col_yellow);
+		for (int i = 0; i < HS_N; i++)
+		{
+			q = t;
+			if (i < 9) *q++ = ' ';
+			q = put_dec(q, (uint32_t)(i + 1), 1);
+			q = put_str(q, ". ");
+			q = put_str(q, hs[i].name);
+			q = put_str(q, "  ");
+			q = put_dec(q, hs[i].score, 7);
+			q = put_str(q, "  STAGE ");
+			put_dec(q, hs[i].stage, 1);
+			hud_text(SCREEN_W / 2 - 108, 50 + 14 * i, t, i == hs_new ? col_yellow : col_light);
+		}
+	}
+	else if (menu_page == 4)
+	{
+		/* a new high score: the name, letter by letter */
+		hud_text(SCREEN_W / 2 - 64, 92, "A NEW HIGH SCORE!", col_yellow);
+		q = put_dec(t, hs_score, 7);
+		hud_text(SCREEN_W / 2 - 28, 110, t, col_light);
+		for (int k = 0; k < 3; k++)
+		{
+			char c[2] = { hs_name[k], 0 };
+			hud_text(SCREEN_W / 2 - 20 + 16 * k, 132, c, k == hs_pos ? col_yellow : col_light);
+		}
+		if ((frame / 8) & 1) hud_text(SCREEN_W / 2 - 20 + 16 * hs_pos, 142, "-", col_yellow);
+		hud_text(SCREEN_W / 2 - 100, 168, "UP/DOWN LETTER  B NEXT", col_grey);
 	}
 	else if (menu_page == 2)
 	{
@@ -3090,11 +3276,11 @@ static void menu_draw(uint32_t frame)
 		hud_text(SCREEN_W / 2 - 104, 120, t, menu_sel == 2 ? col_yellow : col_light);
 		hud_text(SCREEN_W / 2 - 104, 131, menu_sel == 3 ? "> CONTROLS" : "  CONTROLS", menu_sel == 3 ? col_yellow : col_light);
 		hud_text(SCREEN_W / 2 - 104, 142, menu_sel == 4 ? "> STORY" : "  STORY", menu_sel == 4 ? col_yellow : col_light);
-		hud_text(SCREEN_W / 2 - 104, 153, menu_sel == 5 ? "> CREDITS     (AND MUSIC)" : "  CREDITS     (AND MUSIC)", menu_sel == 5 ? col_yellow : col_light);
-		hud_text(SCREEN_W / 2 - 104, 164, menu_sel == 6 ? "> BACK" : "  BACK", menu_sel == 6 ? col_yellow : col_light);
+		hud_text(SCREEN_W / 2 - 104, 153, menu_sel == 5 ? "> HIGH SCORES" : "  HIGH SCORES", menu_sel == 5 ? col_yellow : col_light);
+		hud_text(SCREEN_W / 2 - 104, 164, menu_sel == 6 ? "> CREDITS     (AND MUSIC)" : "  CREDITS     (AND MUSIC)", menu_sel == 6 ? col_yellow : col_light);
+		hud_text(SCREEN_W / 2 - 104, 175, menu_sel == 7 ? "> BACK" : "  BACK", menu_sel == 7 ? col_yellow : col_light);
 		hud_text(SCREEN_W / 2 - 68, 189, "LEFT/RIGHT CHANGE", col_grey);
 	}
-	(void)frame;
 }
 
 /* one menu frame of input; returns 1 when a game is to start, 2 for the demo, 3 the credits, 4 the story */
@@ -3111,7 +3297,7 @@ static int menu_input(int hit, int held)
 		return getenv("HB_DEMO") ? 2 : 1;          /* HB_DEMO=1: the demo */
 	}
 #endif
-	const int items = menu_page == 0 ? 2 : menu_page == 2 ? 1 : 7;
+	const int items = menu_page == 0 ? 2 : menu_page >= 2 ? 1 : 8;
 	if (hit & PAD_UP) menu_sel = (menu_sel + items - 1) % items;
 	if (hit & PAD_DOWN) menu_sel = (menu_sel + 1) % items;
 	/* left / right: once per press, then repeating while held */
@@ -3133,6 +3319,40 @@ static int menu_input(int hit, int held)
 	{
 		if (ok) { menu_page = 1; menu_sel = 3; }   /* CONTROLS -> back to OPTIONS */
 	}
+	else if (menu_page == 3)
+	{
+		if (ok) { menu_page = hs_new >= 0 ? 0 : 1; menu_sel = hs_new >= 0 ? 0 : 5; hs_new = -1; }
+	}
+	else if (menu_page == 4)
+	{
+		/* the name: Up / Down the letter, Left / Right the place, B / C / A next, Start done */
+		const int nc = (int)sizeof hs_chars - 1;
+		int ci = 0;
+		while (ci < nc && hs_chars[ci] != hs_name[hs_pos]) ci++;
+		if (hit & PAD_UP) hs_name[hs_pos] = hs_chars[(ci + 1) % nc];
+		if (hit & PAD_DOWN) hs_name[hs_pos] = hs_chars[(ci + nc - 1) % nc];
+		if (hit & PAD_LEFT) hs_pos = (hs_pos + 2) % 3;
+		if (hit & PAD_RIGHT) hs_pos = (hs_pos + 1) % 3;
+		menu_sel = 0;
+		if (hit & (PAD_B | PAD_C | PAD_A | PAD_START))
+		{
+			if (hs_pos < 2 && !(hit & PAD_START)) hs_pos++;
+			else
+			{
+				const int at = hs_place(hs_score);
+				if (at >= 0)
+				{
+					memmove(&hs[at + 1], &hs[at], sizeof hs[0] * (size_t)(HS_N - 1 - at));
+					memcpy(hs[at].name, hs_name, 4);
+					hs[at].score = hs_score;
+					hs[at].stage = hs_stage;
+					hs_save();
+				}
+				hs_new = at;
+				menu_page = 3;
+			}
+		}
+	}
 	else
 	{
 		if (menu_sel == 0 && step) opt_stage = (opt_stage - 1 + step + NSTAGES) % NSTAGES + 1;
@@ -3145,8 +3365,9 @@ static int menu_input(int hit, int held)
 		if (menu_sel == 2 && (step || ok)) { opt_music ^= 1; music(TRACK_MENU); }
 		if (ok && menu_sel == 3) { menu_page = 2; menu_sel = 0; }
 		if (ok && menu_sel == 4) return 4;          /* the story */
-		if (ok && menu_sel == 5) return 3;          /* the credits */
-		if (ok && menu_sel == 6) { menu_page = 0; menu_sel = 1; }
+		if (ok && menu_sel == 5) { menu_page = 3; hs_new = -1; }   /* the high scores */
+		if (ok && menu_sel == 6) return 3;          /* the credits */
+		if (ok && menu_sel == 7) { menu_page = 0; menu_sel = 1; }
 	}
 	return 0;
 }
@@ -3236,7 +3457,7 @@ static void run_steps(void)
 			if (gs_t > 60 * 8 || (gs_t > 120 && (hit & PAD_START)))
 			{
 				if (stage < NSTAGES) { stage_go(stage + 1); gs = GS_INTRO; }
-				else { gs = GS_MENU; menu_page = 0; menu_sel = 0; music(TRACK_MENU); }
+				else { gs = GS_MENU; hs_game_end(); music(TRACK_MENU); }
 				gs_t = 0;
 				s = steps;
 				last_ms = plat_ticks_ms(); acc = 0;
@@ -3246,7 +3467,8 @@ static void run_steps(void)
 			fx_tick();
 			if (gs_t > 60 * 8 || (gs_t > 120 && (hit & PAD_START)))
 			{
-				gs = GS_MENU; gs_t = 0; menu_page = 0; menu_sel = 0;
+				gs = GS_MENU; gs_t = 0;
+				hs_game_end();
 				music(TRACK_MENU);
 				s = steps;
 			}
@@ -3341,7 +3563,11 @@ int main(int argc, char *argv[])
 	(void)argc; (void)argv;
 	plat_init();
 	load_resident();
+	hs_load();
 	music(TRACK_MENU);
+#ifndef OJ32X_MARS
+	if (getenv("HB_HSTEST")) { pl.score = (uint32_t)atoi(getenv("HB_HSTEST")); stage = 2; hs_game_end(); }   /* PC check: the name entry */
+#endif
 
 	int attract = 0, demo_first = 1;
 	uint32_t idle_ms = 0;
@@ -3448,7 +3674,7 @@ int main(int argc, char *argv[])
 			/* OPTIONS - CREDITS: the plasma, the credits, the music player (credits.c) */
 			if (credits_input(hit))
 			{
-				gs = GS_MENU; menu_page = 1; menu_sel = 5;
+				gs = GS_MENU; menu_page = 1; menu_sel = 6;
 				music(TRACK_MENU);
 				pad_prev = pad;
 				continue;

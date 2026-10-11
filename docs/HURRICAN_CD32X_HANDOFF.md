@@ -264,3 +264,13 @@ Disc: `sega/HurricanP1c/HurricanP1c.cue`.
 ## P1o
 - The score in the middle of the HUD's top row.
 - Disc: `sega/HurricanP1o/HurricanP1o.cue`.
+
+## P1p
+- The muzzle flame (Hurrican's SchussFlamme: schussflamme / 2 / 3.png, straight / diagonal / up,
+  two frames per weapon) at the barrel for 4 steps after each shot (pl.flash_*; drawing only).
+- High scores: OPTIONS - HIGH SCORES (menu_page 3), name entry after the game (menu_page 4),
+  hs_load at start, hs_save after an entry: CMD 56 / 57 / 58 / 59 of the unchanged Sub-CPU
+  program (backup RAM file OPENJAZZ_JJ, words 1984-2047, "HSC1"); PC: HB_DIR/HISCORE.BIN,
+  HB_HSTEST=score shows the name entry at once.
+- Disc: `sega/HurricanP1p/HurricanP1p.cue`.
+
