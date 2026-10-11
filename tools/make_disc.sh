@@ -1,14 +1,17 @@
 #!/bin/bash
 # make_disc.sh - builds the Hurrican CD32X disc of the folder this script sits
-# in (tools/..), checks it, and copies the .bin / .cue to sega/HurricanBG1/.
+# in (tools/..), checks it, and copies the .bin / .cue to discs/ in the title's folder: discs/HurricanBG1/.
 #   bash /mnt/s/KoboPort/sega-toolchain-12.1/sega/HurricanCD32X/tools/make_disc.sh
 # Hurrican's data: HURRICAN_DATA=<folder>, or HurricanData/ in the project folder, or taken
-# from Hurrican-master.zip (next to the project folder or in it; unpacked into HurricanData/
-# once). Nothing is read from or written to the Windows Downloads folder.
+# from Hurrican-master.zip in the project folder (unpacked into HurricanData/ once). Nothing is read from or written to the Windows Downloads folder.
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 NAME=HurricanBG1
-DISCS="$(cd "$HERE/.." && pwd)/$NAME"
+# everything stays inside the title's folder: the disc goes to discs/<name>/ in it (a test
+# build unpacked into a sub-folder of HurricanCD32X puts its disc there too)
+TOP="$HERE"
+[ -f "$HERE/../build.sh" ] && [ -d "$HERE/../game" ] && TOP="$(cd "$HERE/.." && pwd)"
+DISCS="$TOP/discs/$NAME"
 
 say()  { echo; echo "==> $*"; }
 fail() { echo; echo "*** STOPPED: $*"; echo "*** Paste the lines above and this message."; exit 1; }
@@ -17,15 +20,17 @@ cd "$HERE" || fail "cannot enter $HERE"
 say "Project folder: $HERE"
 
 DATA="${HURRICAN_DATA:-$HERE/HurricanData}"
+# a test build inside the title's folder uses the title's unpacked data
+[ -z "${HURRICAN_DATA:-}" ] && [ ! -d "$DATA/textures" ] && [ -d "$TOP/HurricanData/textures" ] && DATA="$TOP/HurricanData"
 # the story's text (OPTIONS - STORY) is Hurrican/lang/english.lng, beside data/: an older
 # HurricanData/ without lang/ is unpacked again
 [ -d "$DATA/textures" ] && [ ! -f "$DATA/lang/english.lng" ] && [ ! -f "$DATA/../lang/english.lng" ] && [ -z "${HURRICAN_DATA:-}" ] && rm -rf "$HERE/HurricanData"
 if [ ! -d "$DATA/textures" ]; then
   ZIP=""
-  for z in "$(cd "$HERE/.." && pwd)/Hurrican-master.zip" "$HERE/Hurrican-master.zip"; do
+  for z in "$HERE/Hurrican-master.zip" "$TOP/Hurrican-master.zip"; do
     [ -f "$z" ] && { ZIP="$z"; break; }
   done
-  [ -n "$ZIP" ] || fail "no Hurrican data: put Hurrican-master.zip in or next to the project folder, or set HURRICAN_DATA"
+  [ -n "$ZIP" ] || fail "no Hurrican data: put Hurrican-master.zip in the project folder (HurricanCD32X), or set HURRICAN_DATA"
   say "Unpacking Hurrican's data from $ZIP"
   T="$(mktemp -d)"
   unzip -q "$ZIP" 'Hurrican-master/Hurrican/data/*' 'Hurrican-master/Hurrican/lang/*' -d "$T" || fail "unzip failed"

@@ -171,7 +171,7 @@ Needs:
     HURRICAN_DATA=<Hurrican's data folder> ./build.sh 2>&1 | tee build_log.txt
 
 or `tools/make_disc.sh`, which also takes the data from `Hurrican-master.zip` next to this folder
-and copies the disc to `sega/HurricanBG1/`. The disc: `cd32x/subcpu/HurricanBG1.cue` / `.bin`
+and copies the disc to `discs/HurricanBG1/` inside this folder (nothing is written outside it). The disc: `cd32x/subcpu/HurricanBG1.cue` / `.bin`
 (data track + 23 audio tracks).
 
 The recorded demos (`game/demo_data.h`): the buttons of every 60 Hz step. In a demo the world is
