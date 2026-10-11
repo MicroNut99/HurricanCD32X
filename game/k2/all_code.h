@@ -1,0 +1,11 @@
+/* all groups of added kinds */
+#include "rocks.c"
+#include "caves.c"
+#include "factory.c"
+#include "temple.c"
+#include "ice.c"
+#include "b1.c"
+#include "b2.c"
+#include "b3.c"
+#include "b4.c"
+#include "vents.c"

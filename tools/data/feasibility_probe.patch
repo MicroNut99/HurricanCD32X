@@ -1,0 +1,374 @@
+diff -ruN Hurrican/src/DX8Graphics.cpp Hurrican/src/DX8Graphics.cpp
+--- Hurrican/src/DX8Graphics.cpp	2026-04-05 12:15:39.000000000 -0700
++++ Hurrican/src/DX8Graphics.cpp	2026-10-10 10:32:18.281405586 -0700
+@@ -15,6 +15,8 @@
+ // --------------------------------------------------------------------------------------
+ 
+ #include "DX8Graphics.hpp"
++#include "hur_probe.hpp"
++#include <cstdlib>
+ #include <time.h>
+ #include <algorithm>
+ #include <stdexcept>
+@@ -553,6 +555,8 @@
+                                          std::uint32_t PrimitiveCount,
+                                          void *pVertexStreamZeroData) {
+     constexpr int STRIDE = sizeof(VERTEX2D);
++    hur_probe_draw(PrimitiveType, PrimitiveCount, pVertexStreamZeroData, static_cast<int>(BlendMode), use_shader == shader_t::TEXTURE);
++    { static int nogl = -1; if (nogl < 0) nogl = getenv("HUR_NOGL") ? 1 : 0; if (nogl) return; }
+     constexpr size_t CLR_OFFSET = offsetof(VERTEX2D, color);
+     constexpr size_t TEX_OFFSET = offsetof(VERTEX2D, tu);
+ 
+@@ -758,6 +762,7 @@
+ // --------------------------------------------------------------------------------------
+ 
+ void DirectGraphicsClass::ShowBackBuffer() {
++    hur_probe_frame();
+ #if (defined(USE_GL2) || defined(USE_GL3)) && defined(USE_FBO)
+     if (RenderBuffer.IsEnabled()) {
+         VERTEX2D vertices[4];
+diff -ruN Hurrican/src/DX8Sprite.cpp Hurrican/src/DX8Sprite.cpp
+--- Hurrican/src/DX8Sprite.cpp	2026-04-05 12:15:39.000000000 -0700
++++ Hurrican/src/DX8Sprite.cpp	2026-10-10 10:17:00.932393922 -0700
+@@ -21,6 +21,7 @@
+ 
+ #include "DX8Graphics.hpp"
+ #include "DX8Sprite.hpp"
++#include "hur_probe.hpp"
+ #include "Gameplay.hpp"
+ #include "Globals.hpp"
+ #include "Logdatei.hpp"
+@@ -271,6 +272,7 @@
+     ReplaceAll(msg, ".png", "");
+     msg = "Loaded texture " + msg;
+     Protokoll << msg << std::endl;
++    hur_probe_tex(filename.c_str(), xs, ys, xfc, yfc, xfs, yfs);
+     DisplayLoadInfo("");
+ 
+     return true;
+diff -ruN Hurrican/src/Gameplay.cpp Hurrican/src/Gameplay.cpp
+--- Hurrican/src/Gameplay.cpp	2026-04-05 12:15:39.000000000 -0700
++++ Hurrican/src/Gameplay.cpp	2026-10-10 10:28:47.757404593 -0700
+@@ -13,6 +13,8 @@
+ // --------------------------------------------------------------------------------------
+ 
+ #include "Gameplay.hpp"
++#include "hur_probe.hpp"
++#include <chrono>
+ #include <stdio.h>
+ #include "Console.hpp"
+ #include "DX8Font.hpp"
+@@ -273,6 +275,7 @@
+     }
+ 
+     // Run the Logic
++    auto hur_t0 = std::chrono::steady_clock::now();
+     for (int i = 0; i < chunks; i++) {
+         for (int p = 0; p < NUMPLAYERS; p++) {
+             Player[p].WasDamaged = false;
+@@ -309,6 +312,9 @@
+         TileEngine.CheckBounds();
+     }
+     Timer.setSpeedFactor(SpeedFaktorMax);  // Restore the factor so other logic can stay in sync
++    hur_probe_logic(chunks, std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - hur_t0).count(),
++                    Gegner.GetNumGegner(), Projectiles.GetNumProjectiles(), PartikelSystem.GetNumPartikel());
++    hur_probe_time(0);
+ 
+     if (SpielZustand != GameStateEnum::GAMELOOP)
+         return;
+@@ -316,18 +322,19 @@
+     // Hintergrund und Parallax Layer anzeigen
+     DirectGraphics.SetColorKeyMode();
+     TileEngine.CalcRenderRange();
+-    TileEngine.DrawBackground();
++    hur_tag = 0; TileEngine.DrawBackground();
+ 
+     // Evtl. rotieren, wenn Screen wackelt
+     if (WackelMaximum > 0.0f)
+         ScreenWackeln();
+ 
+     // Level anzeigen
+-    TileEngine.DrawBackLevel();
+-    TileEngine.DrawFrontLevel();
++    hur_tag = 1; TileEngine.DrawBackLevel();
++    hur_tag = 2; TileEngine.DrawFrontLevel();
+ 
+     // Gegner anzeigen
+-    Gegner.RenderAll();
++    hur_tag = 3; Gegner.RenderAll();
++    hur_tag = 4;
+ 
+     // Spieler anzeigen
+     for (int p = 0; p < NUMPLAYERS; p++) {
+@@ -360,10 +367,11 @@
+     }
+ 
+     // Schüsse abhandeln
+-    Projectiles.DoProjectiles();
++    hur_tag = 5; Projectiles.DoProjectiles();
+ 
+     // Partikel abhandeln
+-    PartikelSystem.DoPartikel();
++    hur_tag = 6; PartikelSystem.DoPartikel();
++    hur_tag = 7;
+ 
+     // Overlay Tiles des Levels zeigen und Spieler und Objekte verdecken
+     DirectGraphics.SetColorKeyMode();
+@@ -374,7 +382,7 @@
+     TileEngine.DrawShadow();
+ 
+     // HUD anhandeln
+-    HUD.DoHUD();
++    hur_tag = 8; HUD.DoHUD();
+ 
+     // ggf. BossHUD anzeigen
+     HUD.RenderBossHUD();
+@@ -403,7 +411,8 @@
+     }
+ 
+     // Blitz und andere Partikel rendern, die alles überlagern
+-    PartikelSystem.DoThunder();
++    hur_tag = 9; PartikelSystem.DoThunder();
++    hur_tag = 10; hur_probe_time(1);
+ 
+     if (!Console.Showing) {
+         // Waffen 1-3 auswählen
+diff -ruN Hurrican/src/Main.cpp Hurrican/src/Main.cpp
+--- Hurrican/src/Main.cpp	2026-04-05 12:15:39.000000000 -0700
++++ Hurrican/src/Main.cpp	2026-10-10 10:17:13.505474126 -0700
+@@ -16,8 +16,9 @@
+ // --------------------------------------------------------------------------------------
+ 
+ #ifdef NDEBUG
+-#  define SHOW_CRACKTRO
++//#  define SHOW_CRACKTRO
+ #endif
++#include "hur_probe.hpp"
+ 
+ // --------------------------------------------------------------------------------------
+ // Includes
+@@ -833,6 +834,13 @@
+             SpielZustand = GameStateEnum::MAINMENU;
+ 
+ #endif
++            if (const char *hl = getenv("HUR_LEVEL")) {
++                int n = atoi(hl);
++                InitNewGame();
++                for (int p = 0; p < NUMPLAYERS; p++) { Player[p].Aktion.reset(); Player[p].GodMode = true; }
++                Stage = n; NewStage = n;
++                InitNewGameLevel();
++            }
+             //		pOuttro = new OuttroClass();
+             //		SpielZustand = GameStateEnum::OUTTRO;
+ 
+diff -ruN Hurrican/src/Player.cpp Hurrican/src/Player.cpp
+--- Hurrican/src/Player.cpp	2026-04-05 12:15:39.000000000 -0700
++++ Hurrican/src/Player.cpp	2026-10-10 10:28:47.745635427 -0700
+@@ -15,6 +15,7 @@
+ // --------------------------------------------------------------------------------------
+ 
+ #include "Player.hpp"
++#include "hur_probe.hpp"
+ #include <stdio.h>
+ #include <algorithm>
+ #include <string>
+@@ -664,6 +665,19 @@
+                 }
+             }
+ 
++            if (hur_script_active()) {
++                bool tmp[MAX_AKTIONEN];
++                hur_script_input(tmp, xpos, ypos, MAX_AKTIONEN);
++                Aktion.reset();
++                for (int i = 0; i < MAX_AKTIONEN; i++) if (tmp[i]) Aktion[i] = true;
++                float nx, ny;
++                if (hur_sweep_next(&nx, &ny)) {
++                    xpos = xposold = nx; ypos = yposold = ny; yspeed = 0.0f;
++                    Handlung = PlayerActionEnum::STEHEN;
++                    TileEngine.XOffset = nx - 295.0f; TileEngine.YOffset = ny - 300.0f;
++                    TileEngine.CheckBounds();
++                }
++            }
+             // Bewegungen aufnehmen ?
+             if (DEMORecording)
+                 RecordDemo();
+diff -ruN Hurrican/src/Tileengine.cpp Hurrican/src/Tileengine.cpp
+--- Hurrican/src/Tileengine.cpp	2026-04-05 12:15:39.000000000 -0700
++++ Hurrican/src/Tileengine.cpp	2026-10-10 10:17:00.934019535 -0700
+@@ -35,6 +35,7 @@
+ #include "Player.hpp"
+ #include "Projectiles.hpp"
+ #include "Tileengine.hpp"
++#include "hur_probe.hpp"
+ #include "Timer.hpp"
+ 
+ // --------------------------------------------------------------------------------------
+@@ -366,6 +367,7 @@
+     LEVELPIXELSIZE_X = LEVELSIZE_X * TILESIZE_X;
+     LEVELPIXELSIZE_Y = LEVELSIZE_Y * TILESIZE_Y;
+     LoadedTilesets = DateiHeader.UsedTilesets;
++    hur_probe_level(Stage, Filename.c_str(), LEVELSIZE_X, LEVELSIZE_Y, FixEndian(DateiHeader.NumObjects));
+     strcpy_s(Beschreibung, DateiHeader.Beschreibung);
+     bScrollBackground = DateiHeader.ScrollBackground;
+ 
+diff -ruN Hurrican/src/hur_probe.cpp Hurrican/src/hur_probe.cpp
+--- Hurrican/src/hur_probe.cpp	1969-12-31 16:00:00.000000000 -0800
++++ Hurrican/src/hur_probe.cpp	2026-10-10 10:28:47.741381015 -0700
+@@ -0,0 +1,128 @@
++#include "hur_probe.hpp"
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <cmath>
++#include <vector>
++#include <chrono>
++#include "DX8Graphics.hpp"
++#include "Globals.hpp"
++#include "Main.hpp"
++
++int hur_tag = 9;
++int hur_frame = 0;
++static FILE *out = nullptr;
++static const int NTAG = 12, NBLEND = 3, NTEX = 2;
++// per frame: area (pixels at 640x480, clipped), draw calls, triangles, alpha area (vertex alpha<255)
++static double area[NTAG][NBLEND][NTEX], aarea[NTAG][NBLEND][NTEX];
++static long calls[NTAG][NBLEND][NTEX], tris[NTAG][NBLEND][NTEX];
++
++static FILE *get() {
++  if (!out) { const char *p = getenv("HUR_PROBE"); out = fopen(p ? p : "hur_probe.txt", "w"); }
++  return out;
++}
++
++struct P { double x, y; };
++static int clip_edge(const P *in, int n, P *o, int edge) {
++  // 0: x>=0 1: x<=640 2: y>=0 3: y<=480
++  int m = 0;
++  for (int i = 0; i < n; i++) {
++    P a = in[i], b = in[(i + 1) % n];
++    auto inside = [&](P p) { switch (edge) { case 0: return p.x >= 0; case 1: return p.x <= 640; case 2: return p.y >= 0; default: return p.y <= 480; } };
++    auto isect = [&](P p, P q) { double t; P r; switch (edge) {
++      case 0: t = (0 - p.x) / (q.x - p.x); r = {0, p.y + t * (q.y - p.y)}; break;
++      case 1: t = (640 - p.x) / (q.x - p.x); r = {640, p.y + t * (q.y - p.y)}; break;
++      case 2: t = (0 - p.y) / (q.y - p.y); r = {p.x + t * (q.x - p.x), 0}; break;
++      default: t = (480 - p.y) / (q.y - p.y); r = {p.x + t * (q.x - p.x), 480}; } return r; };
++    bool ia = inside(a), ib = inside(b);
++    if (ia) o[m++] = a;
++    if (ia != ib) o[m++] = isect(a, b);
++  }
++  return m;
++}
++static double tri_area(P a, P b, P c) {
++  P in[3] = {a, b, c}, t1[9], t2[12];
++  int n = clip_edge(in, 3, t1, 0); if (!n) return 0;
++  n = clip_edge(t1, n, t2, 1); if (!n) return 0;
++  n = clip_edge(t2, n, t1, 2); if (!n) return 0;
++  n = clip_edge(t1, n, t2, 3); if (!n) return 0;
++  double s = 0;
++  for (int i = 0; i < n; i++) { P p = t2[i], q = t2[(i + 1) % n]; s += p.x * q.y - q.x * p.y; }
++  return std::fabs(s) * 0.5;
++}
++
++void hur_probe_draw(unsigned prim, unsigned count, const void *verts, int blend, int textured) {
++  const VERTEX2D *v = static_cast<const VERTEX2D *>(verts);
++  int tg = hur_tag < 0 || hur_tag >= NTAG ? NTAG - 1 : hur_tag;
++  int bl = blend < 0 || blend >= NBLEND ? 0 : blend;
++  int tx = textured ? 1 : 0;
++  calls[tg][bl][tx]++;
++  unsigned ntri = 0;
++  auto add = [&](const VERTEX2D &a, const VERTEX2D &b, const VERTEX2D &c) {
++    double ar = tri_area({a.x, a.y}, {b.x, b.y}, {c.x, c.y});
++    area[tg][bl][tx] += ar; ntri++;
++    unsigned al = reinterpret_cast<const unsigned char *>(&a.color)[3];
++    if (al < 255) aarea[tg][bl][tx] += ar;
++  };
++  if (prim == 0x0004 /*GL_TRIANGLES*/) { for (unsigned i = 0; i < count; i++) add(v[3*i], v[3*i+1], v[3*i+2]); }
++  else if (prim == 0x0005 /*GL_TRIANGLE_STRIP*/) { for (unsigned i = 0; i < count; i++) add(v[i], v[i+1], v[i+2]); }
++  tris[tg][bl][tx] += ntri;
++}
++
++void hur_probe_frame(void) {
++  FILE *f = get(); if (!f) return;
++  for (int t = 0; t < NTAG; t++) for (int b = 0; b < NBLEND; b++) for (int x = 0; x < NTEX; x++) {
++    if (!calls[t][b][x]) continue;
++    fprintf(f, "F %d %d %d %d %ld %ld %.0f %.0f\n", hur_frame, t, b, x, calls[t][b][x], tris[t][b][x], area[t][b][x], aarea[t][b][x]);
++    calls[t][b][x] = tris[t][b][x] = 0; area[t][b][x] = aarea[t][b][x] = 0;
++  }
++  hur_frame++;
++  const char *n = getenv("HUR_FRAMES");
++  if (n && hur_frame >= atoi(n)) { fflush(f); GameRunning = false; }
++}
++void hur_probe_tex(const char *name, int xs, int ys, int xfc, int yfc, int xfs, int yfs) {
++  FILE *f = get(); if (f) { fprintf(f, "T %s %d %d %d %d %d %d\n", name, xs, ys, xfc, yfc, xfs, yfs); fflush(f); }
++}
++void hur_probe_level(int stage, const char *name, int sx, int sy, int nobj) {
++  FILE *f = get(); if (f) { fprintf(f, "L %d %s %d %d %d frame=%d\n", stage, name, sx, sy, nobj, hur_frame); fflush(f); }
++}
++void hur_probe_note(const char *s, float a, float b) {
++  FILE *f = get(); if (f) fprintf(f, "N %d %s %.1f %.1f\n", hur_frame, s, a, b);
++}
++
++// ---- scripted player: hold a direction, jump and fire in bursts, turn round when stuck
++bool hur_script_active(void) { static int v = -1; if (v < 0) v = getenv("HUR_SCRIPT") ? 1 : 0; return v == 1; }
++void hur_script_input(bool *akt, float xpos, float ypos, int nakt) {
++  static int dir = 1, f = 0, stuck = 0; static float lx = -1, ly = -1;
++  f++;
++  if (f % 60 == 0) hur_probe_note("pos", xpos, ypos);
++  if (f % 120 == 0) { if (std::fabs(xpos - lx) < 24 && std::fabs(ypos - ly) < 24) { stuck++; dir = -dir; } else stuck = 0; lx = xpos; ly = ypos; }
++  for (int i = 0; i < nakt; i++) akt[i] = false;
++  akt[dir > 0 ? 1 : 0] = true;                // AKTION_RECHTS / LINKS
++  if ((f % 75) < 22) akt[5] = true;           // JUMP
++  if ((f % 40) < 25) akt[6] = true;           // SHOOT
++  if ((f % 300) < 20) akt[9] = true;          // GRANATE now and then
++  if (stuck >= 3 && (f % 60) < 30) akt[3] = true;   // OBEN (climb / doors)
++}
++
++bool hur_sweep_next(float *x, float *y) {
++  static std::vector<std::pair<float,float>> pts; static int loaded = 0, f = 0; static size_t k = 0;
++  if (!loaded) { loaded = 1; const char *p = getenv("HUR_SWEEP"); if (p) { FILE *s = fopen(p, "r"); float a, b; if (s) { while (fscanf(s, "%f %f", &a, &b) == 2) pts.push_back({a, b}); fclose(s); } } }
++  if (pts.empty()) return false;
++  f++;
++  int per = getenv("HUR_SWEEP_FRAMES") ? atoi(getenv("HUR_SWEEP_FRAMES")) : 90;
++  if (f % per != 1) return false;
++  if (k >= pts.size()) { FILE *o = get(); if (o) { fprintf(o, "N %d sweepdone 0 0\n", hur_frame); fflush(o); } GameRunning = false; return false; }
++  *x = pts[k].first; *y = pts[k].second; k++;
++  hur_probe_note("spot", *x, *y);
++  return true;
++}
++void hur_probe_logic(int chunks, double us, int ng, int np, int npart) {
++  FILE *f = get(); if (f) fprintf(f, "G %d %d %.0f %d %d %d\n", hur_frame, chunks, us, ng, np, npart);
++}
++static std::chrono::steady_clock::time_point t0;
++void hur_probe_time(int phase) {
++  auto now = std::chrono::steady_clock::now();
++  if (phase) { FILE *f = get(); if (f) fprintf(f, "R %d %.0f\n", hur_frame, std::chrono::duration<double, std::micro>(now - t0).count()); }
++  t0 = now;
++}
+diff -ruN Hurrican/src/hur_probe.hpp Hurrican/src/hur_probe.hpp
+--- Hurrican/src/hur_probe.hpp	1969-12-31 16:00:00.000000000 -0800
++++ Hurrican/src/hur_probe.hpp	2026-10-10 10:28:47.737195659 -0700
+@@ -0,0 +1,15 @@
++// Feasibility probe: counts what the renderer draws per frame.
++#pragma once
++#include <cstdint>
++extern int hur_tag;                 // which phase of the frame is drawing (see Gameplay.cpp)
++extern int hur_frame;
++void hur_probe_draw(unsigned prim, unsigned count, const void *verts, int blend, int textured);
++void hur_probe_frame(void);
++void hur_probe_tex(const char *name, int xs, int ys, int xfc, int yfc, int xfs, int yfs);
++void hur_probe_level(int stage, const char *name, int sx, int sy, int nobj);
++void hur_probe_note(const char *s, float a, float b);
++bool hur_script_active(void);
++bool hur_sweep_next(float *x, float *y);
++void hur_probe_logic(int chunks, double us_logic, int ng, int np, int npart);
++void hur_probe_time(int phase);
++void hur_script_input(bool *aktion, float xpos, float ypos, int nakt);
+--- Hurrican/CMakeLists.txt	2026-04-05 12:15:39.000000000 -0700
++++ Hurrican/CMakeLists.txt	2026-10-10 10:17:13.506194571 -0700
+@@ -316,6 +316,7 @@
+         src/Partikelsystem.cpp
+         src/Partikelsystem.hpp
+         src/Player.cpp
++        src/hur_probe.cpp
+         src/Player.hpp
+         src/Projectiles.cpp
+         src/Projectiles.hpp

@@ -1,0 +1,11 @@
+/* all groups of added kinds */
+#include "rocks_list.h"
+#include "caves_list.h"
+#include "factory_list.h"
+#include "temple_list.h"
+#include "ice_list.h"
+#include "b1_list.h"
+#include "b2_list.h"
+#include "b3_list.h"
+#include "b4_list.h"
+#include "vents_list.h"

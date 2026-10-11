@@ -1,0 +1,23 @@
+build/
+HurricanData/
+mars/obj/
+mars/*.elf
+mars/*.bin
+mars/*.map
+mars/HURRICAN.32X
+mars/report.txt
+host/hurrican_b1_host
+cd32x/subcpu/ROMS/
+cd32x/subcpu/cd/
+cd32x/subcpu/*.iso
+cd32x/subcpu/*.bin
+cd32x/subcpu/*.cue
+cd32x/subcpu/*.wav
+build_log.txt
+__pycache__/
+*.pyc
+host/hurrican_*
+build/
+
+# PC test frames
+frame_*.ppm

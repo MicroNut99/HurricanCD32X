@@ -1,0 +1,13 @@
+/* stages 8 and 9: the bosses of the caves and the end (game/k2/b4.c) */
+K2(GEGNERSTURM,  128, "",                       0,   0,  40,  40,  4500,  0, 6, 0,     0, 0, 0, 0)
+K2(METALHEAD,    129, "metalhead_birne.png",   20, 133, 130, 212,  4000,  0, 6, 0, 12500, 0, 0, 0)
+K2(MHBOMB,        -1, "fireball_big.png",       8,   8,  52,  46,     1,  0, 6, 0,     0, 0, 1, 0)
+K2(SKELETOR,     138, "skeletor.png",          40,  20,  85, 200,  7000,  0, 6, 0, 12500, 1, 0, 0)
+K2(SKGRANATE,     -1, "skeletor_granate.png",   4,   4,  16,  15,     1,  9, 3, 0,     0, 0, 1, 0)
+K2(B4ORB,         -1, "golemschuss.png",        2,   2,  18,  18,     1, 24, 3, 0,     0, 0, 1, 0)
+K2(SKULL,         -1, "skull.png",              4,   4,  28,  37, 30000, 19, 6, 0,     0, 0, 0, 1)
+K2(THEWALL,      139, "endbossmaschine.png", -1000,  0, 285, 480,  4000,  0, 6, 0,     0, 0, 0, 0)
+K2(WELEKTRO,      -1, "spidershot2.png",       16,  16,  32,  32,     1,  0, 6, 0,     0, 0, 0, 0)
+K2(WPAMPE,        -1, "elektropampe.png",       0,   0, 640, 128,     1,  4, 3, 0,     0, 0, 0, 0)
+K2(WLASER,        -1, "fetterspinnenlaser.png", 0,-100, 500, 100,     1,  0, 6, 0,     0, 0, 0, 0)
+K2(WTARGET,       -1, "",                       5, 232,  25, 260, 30000,  0, 6, 0,     0, 0, 0, 0)
