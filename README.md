@@ -9,7 +9,7 @@ be recompiled (its game logic is floating point; the SH2 has no FPU), and that a
 could reach Jazz-like frame rates *if* the 32X can draw Hurrican's scenes fast enough. B1 measured
 it on the console; P1 is the first playable build.
 
-## P1n: all stages, all weapons, the bosses, recorded attract demos
+## P1o: all stages, all weapons, the bosses, recorded attract demos
 
 The game starts at a menu:
 
@@ -168,7 +168,7 @@ Needs:
     HURRICAN_DATA=<Hurrican's data folder> ./build.sh 2>&1 | tee build_log.txt
 
 or `tools/make_disc.sh`, which also takes the data from `Hurrican-master.zip` next to this folder
-and copies the disc to `sega/HurricanP1n/`. The disc: `cd32x/subcpu/HurricanP1n.cue` / `.bin`
+and copies the disc to `sega/HurricanP1o/`. The disc: `cd32x/subcpu/HurricanP1o.cue` / `.bin`
 (data track + 23 audio tracks).
 
 The recorded demos (`game/demo_data.h`): the buttons of every 60 Hz step. In a demo the world is

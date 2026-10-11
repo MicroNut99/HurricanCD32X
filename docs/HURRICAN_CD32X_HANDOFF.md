@@ -260,3 +260,7 @@ Disc: `sega/HurricanP1c/HurricanP1c.cue`.
 - Stage 1 demos B and C recorded again (the bees' limit changed their world).
 - Disc: `sega/HurricanP1n/HurricanP1n.cue`.
 
+
+## P1o
+- The score in the middle of the HUD's top row.
+- Disc: `sega/HurricanP1o/HurricanP1o.cue`.

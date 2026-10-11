@@ -2901,7 +2901,7 @@ static void draw_hud(uint32_t frame)
 		put_dec(q, (uint32_t)(pl.lives > 0 ? pl.lives : 0), 1);
 		hud_text(64, 1, t, col_light);
 		put_dec(t, pl.score, 7);
-		hud_text(96, 1, t, col_light);
+		hud_text(SCREEN_W / 2 - 7 * 8 / 2, 1, t, col_light);   /* the score in the middle (P1o) */
 		q = put_str(t, "GEMS ");
 		put_dec(q, (uint32_t)pl.gems, 3);
 		hud_text(SCREEN_W - 8 * 8 - 6, 1, t, col_light);
