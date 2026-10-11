@@ -280,3 +280,6 @@ Disc: `sega/HurricanP1c/HurricanP1c.cue`.
   TILEXT.BIN (tools/hur_convert.py), empty rows skipped, one layer without light copied straight
   from the tile. Frames the same as before (checked picture for picture on the PC).
 - Disc: `sega/HurricanP1q/HurricanP1q.cue`.
+- Everything stays in the title's folder: make_disc.sh puts the disc in HurricanCD32X/discs/<name>/,
+  a test build is unpacked into a sub-folder of HurricanCD32X (e.g. BG1/) and uses the title's
+  HurricanData/; the source zips go to HurricanCD32X/ itself.

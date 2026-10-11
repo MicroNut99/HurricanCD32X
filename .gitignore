@@ -21,3 +21,6 @@ build/
 
 # PC test frames
 frame_*.ppm
+discs/
+HurricanData/
+BG1/
