@@ -3,8 +3,8 @@
 # in (tools/..), checks it, and copies the .bin / .cue to sega/HurricanBG1/.
 #   bash /mnt/s/KoboPort/sega-toolchain-12.1/sega/HurricanCD32X/tools/make_disc.sh
 # Hurrican's data: HURRICAN_DATA=<folder>, or HurricanData/ in the project folder, or taken
-# from Hurrican-master.zip (next to the project folder, in it, or in the Windows Downloads
-# folder; unpacked into HurricanData/ once).
+# from Hurrican-master.zip (next to the project folder or in it; unpacked into HurricanData/
+# once). Nothing is read from or written to the Windows Downloads folder.
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 NAME=HurricanBG1
@@ -22,10 +22,10 @@ DATA="${HURRICAN_DATA:-$HERE/HurricanData}"
 [ -d "$DATA/textures" ] && [ ! -f "$DATA/lang/english.lng" ] && [ ! -f "$DATA/../lang/english.lng" ] && [ -z "${HURRICAN_DATA:-}" ] && rm -rf "$HERE/HurricanData"
 if [ ! -d "$DATA/textures" ]; then
   ZIP=""
-  for z in "$(cd "$HERE/.." && pwd)/Hurrican-master.zip" "$HERE/Hurrican-master.zip" /mnt/c/Users/*/Downloads/Hurrican-master.zip; do
+  for z in "$(cd "$HERE/.." && pwd)/Hurrican-master.zip" "$HERE/Hurrican-master.zip"; do
     [ -f "$z" ] && { ZIP="$z"; break; }
   done
-  [ -n "$ZIP" ] || fail "no Hurrican data: put Hurrican-master.zip next to the project folder or in your Windows Downloads folder, or set HURRICAN_DATA"
+  [ -n "$ZIP" ] || fail "no Hurrican data: put Hurrican-master.zip in or next to the project folder, or set HURRICAN_DATA"
   say "Unpacking Hurrican's data from $ZIP"
   T="$(mktemp -d)"
   unzip -q "$ZIP" 'Hurrican-master/Hurrican/data/*' 'Hurrican-master/Hurrican/lang/*' -d "$T" || fail "unzip failed"
