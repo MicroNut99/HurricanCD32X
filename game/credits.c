@@ -315,7 +315,7 @@ static int credits_input(int hit)
 
 static void credits_draw(int frames)
 {
-	cam_x = cam_y = view_x = view_y = 0;
+	cam_x = cam_y = view_x = view_y = 0; draw_cx = draw_cy = 0;
 	cr_tick(frames);
 	if (cr_pat == 0) cr_draw_oj();
 	else

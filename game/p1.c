@@ -214,6 +214,7 @@ static uint8_t CLEAN[RING_LIN];          /* the tile layers as the view shows th
 static volatile uint8_t *ring;           /* the back buffer's ring (lin 0) */
 static int view_x, view_y;               /* this frame's level view: world pixels [x, x + 322) x [y, y + PLAY_H), below the HUD band */
 static int cam_x, cam_y;                 /* the camera: world pixel shown at the screen's top-left */
+static int draw_cx, draw_cy;             /* the camera of the frame being drawn (P1n: the steps may move cam_x / cam_y meanwhile, on the slave SH2) */
 
 static inline uint32_t lin_of(int x, int y)
 {
@@ -572,9 +573,9 @@ static void hud_text(int sx, int sy, const char *t, int colour)
 			}
 		}
 		if (hud_into_band) band_put(sx, sy + ry, rowbuf, w, 1);
-		else fb_put(lin_of(cam_x + sx, cam_y + sy + ry), rowbuf, w, 1);
+		else fb_put(lin_of(draw_cx + sx, draw_cy + sy + ry), rowbuf, w, 1);
 	}
-	if (!hud_into_band) rect_add(cam_x + sx, cam_y + sy, cam_x + sx + w, cam_y + sy + 11);
+	if (!hud_into_band) rect_add(draw_cx + sx, draw_cy + sy, draw_cx + sx + w, draw_cy + sy + 11);
 }
 
 /* a filled box on the screen */
@@ -583,8 +584,8 @@ static void hud_box(int sx, int sy, int w, int h, int colour)
 	memset(rowbuf, colour, (size_t)w);
 	for (int y = 0; y < h; y++)
 		if (hud_into_band) band_put(sx, sy + y, rowbuf, w, 0);
-		else fb_put(lin_of(cam_x + sx, cam_y + sy + y), rowbuf, w, 0);
-	if (!hud_into_band) rect_add(cam_x + sx, cam_y + sy, cam_x + sx + w, cam_y + sy + h);
+		else fb_put(lin_of(draw_cx + sx, draw_cy + sy + y), rowbuf, w, 0);
+	if (!hud_into_band) rect_add(draw_cx + sx, draw_cy + sy, draw_cx + sx + w, draw_cy + sy + h);
 }
 
 static char *put_dec(char *p, uint32_t v, int digits)
@@ -1235,8 +1236,9 @@ static void aim_at(int fromx, int fromy, int v, fx *xs, fx *ys)
 /* the added kinds' code */
 /* swarms awake at once (the user's request): bats at most MAX_BATS, the bee-like ones (the
  * mosquito MUECKE, the small wasp) at most MAX_BEES */
-#define MAX_BATS 3
-#define MAX_BEES 3
+#define MAX_BATS 2                       /* P1n: 2 bats, 4 bees; never more than 4 of them together */
+#define MAX_BEES 4
+#define MAX_SWARM 4
 static __attribute__((unused)) int bats_awake(void)
 {
 	int n = 0;
@@ -1917,8 +1919,9 @@ static void player_shoot(void)
 			s->kind = SH_BOUNCE;
 			s->gen = 0;
 			s->pic = &P_bounce[0];
-			s->x = pl.x + FX(mx) - FX(P_bounce[0].fw);
-			s->y = pl.y + FX(my) - FX(P_bounce[0].fh);
+			/* centred on the barrel's line, as the laser (P1n: the plasma balls were 6 px high) */
+			s->x = pl.x + FX(mx - 2 + P_spreadbig.fw) - FX(P_bounce[0].fw);
+			s->y = pl.y + FX(my - 2 + P_spreadbig.fh) - FX(P_bounce[0].fh);
 			s->xs = cos_d(ang) * 65;
 			s->ys = sin_d(ang) * 65;
 			if (s->xs == 0 && s->ys == 0) s->ys = FX(-65);
@@ -2558,8 +2561,8 @@ static void world_activate(void)
 			{
 				const int w = enemy_weight(e->type);
 				if (w && w > budget) continue;          /* waits for room */
-				if (e->type == E_FLEDERMAUS) { if (bats_near >= MAX_BATS) continue; bats_near++; }
-				if (e->type == E_MUECKE || e->type == E_SMALLWESPE) { if (bees_near >= MAX_BEES) continue; bees_near++; }
+				if (e->type == E_FLEDERMAUS) { if (bats_near >= MAX_BATS || bats_near + bees_near >= MAX_SWARM) continue; bats_near++; }
+				if (e->type == E_MUECKE || e->type == E_SMALLWESPE) { if (bees_near >= MAX_BEES || bats_near + bees_near >= MAX_SWARM) continue; bees_near++; }
 				budget -= w;
 				e->active = 1;
 				e->dir = pcx() > ecx(e);
@@ -2918,13 +2921,13 @@ static void draw_hud(uint32_t frame)
 		hud_text(SCREEN_W - 11 * 8 - 6, 12, t, col_light);
 		hud_into_band = 0;
 	}
-	for (int r = 0; r < HUD_H; r++) fb_put(lin_of(cam_x, cam_y + r), hud_band[r], SCREEN_W, 0);
+	for (int r = 0; r < HUD_H; r++) fb_put(lin_of(draw_cx, draw_cy + r), hud_band[r], SCREEN_W, 0);
 	/* the boss's energy */
 	if (boss_bar_t > 0)
 	{
 		const int bw = boss_bar_e > 0 ? boss_bar_e * 120 / boss_bar_max : 0;
-		hud_box(SCREEN_W / 2 - 62, VIEW_H - 16, 124, 8, col_dark);
-		if (bw > 0) hud_box(SCREEN_W / 2 - 60, VIEW_H - 14, bw > 120 ? 120 : bw, 4, col_red);
+		hud_box(SCREEN_W / 2 - 62, HUD_H + 4, 124, 8, col_dark);      /* P1n: under the HUD, not over the player */
+		if (bw > 0) hud_box(SCREEN_W / 2 - 60, HUD_H + 6, bw > 120 ? 120 : bw, 4, col_red);
 		boss_bar_t--;
 	}
 	(void)frame;
@@ -3034,7 +3037,7 @@ static int menu_page, menu_sel, opt_stage = 1, opt_lives = 3, menu_hold;
 /* the menu screen: drawn whole every frame (the view at the world's corner) */
 static void menu_draw(uint32_t frame)
 {
-	cam_x = cam_y = view_x = view_y = 0;
+	cam_x = cam_y = view_x = view_y = 0; draw_cx = draw_cy = 0;
 	for (uint32_t l = 0; l < (uint32_t)VIEW_H * RING_W; l += 2) PUT2(ring, l, 0, 0);
 	const Pic logo = pic("hurrican-logo.png");
 	if (logo.count)
@@ -3269,6 +3272,7 @@ static void frame_begin(void)
 {
 	ring = (volatile uint8_t *)plat_scroll_ring();
 	cur = &bufs[plat_back_index()];
+	draw_cx = cam_x; draw_cy = cam_y;
 	view_x = cam_x & ~1;              /* the line table starts lines at even bytes */
 	view_y = cam_y + HUD_H;           /* the level below the HUD's band */
 }
@@ -3649,7 +3653,7 @@ int main(int argc, char *argv[])
 		}
 #endif
 		plat_border_colour(0);
-		plat_present_scroll(palette, (int)((cam_y + cam_x / RING_W) % VIEW_H), cam_x % RING_W, VIEW_H);
+		plat_present_scroll(palette, (int)((draw_cy + draw_cx / RING_W) % VIEW_H), draw_cx % RING_W, VIEW_H);
 		t1 = plat_prof_us(); tacc[T_HUD] += t1 - t0;
 		frame++;
 	}

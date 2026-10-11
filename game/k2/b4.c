@@ -142,7 +142,7 @@ static int b4_colour(int r, int g, int b)
 /* a filled box in the world (full-size pixels), clipped to the screen */
 static void b4_box_world(int wx, int wy, int w, int h, int colour)
 {
-	int sx = (wx >> 1) - cam_x, sy = (wy >> 1) - cam_y, sw = w >> 1, sh = h >> 1;
+	int sx = (wx >> 1) - draw_cx, sy = (wy >> 1) - draw_cy, sw = w >> 1, sh = h >> 1;
 	if (sx < 0) { sw += sx; sx = 0; }
 	if (sy < HUD_H) { sh -= HUD_H - sy; sy = HUD_H; }
 	if (sx + sw > SCREEN_W) sw = SCREEN_W - sx;

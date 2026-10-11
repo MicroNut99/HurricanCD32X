@@ -778,12 +778,18 @@ static int B1_PIRANHA_draw(const Ent *e, uint32_t t) { (void)e; (void)t; return 
  * Left out: the smoke at its feet and its sore head, the muzzle flares, the screen's offset going
  * back to 20 (the lift's own screen stays at 70).
  */
-enum { FB_NOTV, FB_IN2, FB_IN, FB_DOWN, FB_UP, FB_SHOOT, FB_BOMB, FB_SPECIAL, FB_SPIT, FB_CRUSH, FB_EXPL };
+/* P1n (the user's request): the boss itself is too big for the frame rate - it is not drawn and
+ * does not fight; once it would have come in, a steady stream of stilt walkers and boulders comes
+ * down onto the lift for FB_GAUNT_STEPS (the bar shows the time left), then the stage song and the
+ * lift's own screen come back. The shaft still repeats while it lasts (as with the boss). */
+#define FB_GAUNT_STEPS (60 * 45)
+enum { FB_NOTV, FB_IN2, FB_IN, FB_DOWN, FB_UP, FB_SHOOT, FB_BOMB, FB_SPECIAL, FB_SPIT, FB_CRUSH, FB_EXPL, FB_GAUNT };
 static struct {
 	int32_t fx, fy;                 /* the frame's top-left (xPos, yPos), 8.8 */
 	int32_t tempy, x1, y1, x2, y2, x3, dx1, dx2, canon, off;   /* 8.8 */
 	int16_t delay, shots, lift;     /* ShotDelay (steps), Shots, the lift's entity (-1 none) */
 	int16_t val1;                   /* the screen's y when it came + 100 */
+	int16_t gt;                     /* FB_GAUNT: steps so far */
 	uint8_t activated;
 } b1_fb;
 #define B1_FB_CARRY SYNC(FX(40))
@@ -843,7 +849,8 @@ static int FAHRSTUHLBOSS_step(Ent *e, int idx, int x, int y, int bl, int br, int
 	const int fxi = b1_fb.fx >> 8, fyi = b1_fb.fy >> 8;
 	b1_hit(e);
 	if (b1_fb.x1 < 0) b1_fb.x1 = 0;
-	if (e->state != FB_NOTV && e->state != FB_EXPL) boss_bar(e->energy, 6000);
+	if (e->state == FB_IN2 || e->state == FB_GAUNT) e->energy = 6000;     /* it cannot be hit */
+	if (e->state == FB_GAUNT) boss_bar(FB_GAUNT_STEPS - b1_fb.gt, FB_GAUNT_STEPS);
 	if (!b1_fb.activated)                                /* it comes: find the lift (once) */
 	{
 		b1_fb.activated = 1;
@@ -883,7 +890,7 @@ static int FAHRSTUHLBOSS_step(Ent *e, int idx, int x, int y, int bl, int br, int
 		if (b1_fb.tempy < FX(500))
 		{
 			b1_fb.tempy = FX(500);
-			if (e->state == FB_IN2) { e->state = FB_DOWN; b1_fb.dx2 = FX(5); }
+			if (e->state == FB_IN2) { e->state = FB_GAUNT; b1_fb.gt = 0; }
 			else switch (rnd(6))
 			{
 			case 0: e->state = FB_DOWN; b1_fb.dx2 = 0; break;
@@ -892,8 +899,10 @@ static int FAHRSTUHLBOSS_step(Ent *e, int idx, int x, int y, int bl, int br, int
 			default: e->state = FB_CRUSH; b1_fb.shots = (int16_t)(10 + rnd(20)); b1_fb.delay = 12; break;
 			}
 		}
-		b1_fb.off += SYNC(FX(4));
-		if (b1_fb.off > FX(150)) b1_fb.off = FX(150);
+		/* P1n: no boss above to show - the screen goes the other way, the lift higher up on it
+		 * (this screen is 176 lines below the HUD) */
+		b1_fb.off -= SYNC(FX(4));
+		if (b1_fb.off < FX(20)) b1_fb.off = FX(20);
 		break;
 	case FB_DOWN:                                        /* comes down */
 		b1_fb.tempy -= SYNC(FX(5));
@@ -983,6 +992,30 @@ static int FAHRSTUHLBOSS_step(Ent *e, int idx, int x, int y, int bl, int br, int
 			if (--b1_fb.shots <= 0) { b1_fb.dx2 = FX(5); e->state = FB_DOWN; b1_fb.dx1 = back; }
 		}
 		break;
+	case FB_GAUNT:                                       /* the stream of stilt walkers and boulders */
+		{
+			b1_fb.gt++;
+			if (b1_fb.gt % 70 == 0)
+			{
+				int walkers = 0;
+				for (int k = 0; k < nactive; k++) walkers += ents[active_list[k]].type == E_STELZSACK;
+				if ((b1_fb.gt / 70) % 3 != 2 && walkers < 3)
+				{
+					Ent *s = ent_new(E_STELZSACK, fxi + 10 + rnd(360), fyi + 480);
+					if (s) s->active = 1;
+				}
+				else
+				{
+					Ent *s = ent_new(E_BOULDER, fxi + 10 + rnd(360), fyi + 480);
+					if (s) { s->active = 1; s->v1 = (int16_t)(40 + rnd(20)); s->ys = (int16_t)(temple_lift_ys + FX(s->v1)); }
+					sfx(SFX_LAND);
+				}
+			}
+			b1_fb.off -= SYNC(FX(4));
+			if (b1_fb.off < FX(20)) b1_fb.off = FX(20);
+			if (b1_fb.gt >= FB_GAUNT_STEPS) e->energy = 0;   /* over: the explode hands the screen back */
+		}
+		break;
 	case FB_EXPL:                                        /* bursts, falling through the screen */
 		if (--b1_fb.delay < 0)
 		{
@@ -1015,24 +1048,18 @@ static int FAHRSTUHLBOSS_step(Ent *e, int idx, int x, int y, int bl, int br, int
 	e->x = b1_fb.fx + b1_fb.x1;
 	e->y = b1_fb.fy + b1_fb.y1;
 	if (e->state == FB_EXPL) e->y = b1_fb.fy;           /* falling: kept running and drawn by its top */
+	if (e->state == FB_IN2 || e->state == FB_GAUNT) e->y = FX(cam_y * 2 - 300);   /* not there: above the screen, no target (still run) */
 	return 1;
 }
 static int FAHRSTUHLBOSS_explode(Ent *e)
 {
 	(void)e;
-	fx_add(&P_explbig, (b1_fb.fx >> 8) + 210, (b1_fb.fy >> 8) + 140, 2);
-	sfx(SFX_BIGEXPLODE);
 	boss_unlock();
 	music_stage();
 	return 1;
 }
 static int FAHRSTUHLBOSS_draw(const Ent *e, uint32_t t)
 {
-	(void)e; (void)t;
-	const int c = b1_fb.canon >> 8;
-	draw_pic(&P_FAHRSTUHLBOSS, 0, b1_fb.fx, b1_fb.fy, 0);
-	draw_pic(&b1_p_head, 0, b1_fb.fx + b1_fb.x1, b1_fb.fy + b1_fb.y1, 0);
-	draw_pic(&b1_p_canon, c, b1_fb.fx + b1_fb.x2, b1_fb.fy + b1_fb.y2, 0);
-	draw_pic(&b1_p_canon, 5 - c, b1_fb.fx + b1_fb.x3, b1_fb.fy + b1_fb.y2, 0);
+	(void)e; (void)t;                               /* P1n: not drawn (see FB_GAUNT) */
 	return 1;
 }

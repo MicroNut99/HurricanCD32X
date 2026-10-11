@@ -247,3 +247,16 @@ Disc: `sega/HurricanP1c/HurricanP1c.cue`.
   HB_PATH searches (tools: /tmp scripts, see game/demorec.c).
 - Disc: `sega/HurricanP1m/HurricanP1m.cue`.
 
+## P1n
+- The frame's own camera (draw_cx / draw_cy, set in frame_begin) for the HUD, the texts and the
+  frame's line table: with the second SH2 the steps move cam_x / cam_y while the frame is drawn
+  (the torn screen and the doubled HUD of P1m).
+- Bounce shot centred on the barrel's line as the laser.
+- Swarms: at most 2 bats, 4 bees, 4 of them together.
+- Stage 3's elevator boss (FAHRSTUHLBOSS, b1.c) is not drawn and does not fight: FB_GAUNT - for
+  45 s a stilt walker or a boulder every 70 steps (at most 3 walkers), the bar shows the time
+  left; the screen holds the lift higher (offset 20); then the stage song.
+- Boss bar under the HUD band.
+- Stage 1 demos B and C recorded again (the bees' limit changed their world).
+- Disc: `sega/HurricanP1n/HurricanP1n.cue`.
+

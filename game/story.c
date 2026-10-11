@@ -94,7 +94,7 @@ static int story_step(void)
 
 static void story_draw(void)
 {
-	cam_x = cam_y = view_x = view_y = 0;
+	cam_x = cam_y = view_x = view_y = 0; draw_cx = draw_cy = 0;
 	const uint8_t *pic = story_pic[story_shown], *pal = story_pal[story_shown];
 	/* the colours, faded */
 	if (pal)
