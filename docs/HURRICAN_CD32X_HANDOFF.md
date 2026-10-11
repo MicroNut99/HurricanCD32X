@@ -229,3 +229,21 @@ Disc: `sega/HurricanP1c/HurricanP1c.cue`.
   HB_DEMO=1); bats: at most MAX_BATS (5) awake near the screen (world_activate waits the others),
   the last boss's bat storm adds one only while fewer than 5 are awake.
 
+## P1m (frame rate)
+- The second SH2 runs the frame's world steps (run_steps + after_steps, on an 8 KB stack of its
+  own: call_on_stack, the slave's crt0 stack is 2 KB) while the master brings the level's tiles
+  up to date (draw_tiles, with the camera before the steps); plat_parallel (mars/Makefile:
+  -DOJ32X_SLAVE_DRAWS=1). While it runs, walls shot away only change the map (their drawing
+  waits: wall_pending) and music() is queued; after it the master purges its cache. Only in
+  GS_PLAY; PAUSE - 2ND CPU ON / OFF (ON at start). The PC runs the two parts one after the other.
+- HUD in a 24-line band at the top (HUD_H), drawn into hud_band only when a value changes and
+  copied to the screen each frame; the level's view is the PLAY_H (176) lines below it.
+- Far enemies (more than 240 px off the screen) run every other step (not bosses, platforms,
+  power blocks, not while the camera is held).
+- Top level: spread 5 shots (not 7), laser 2 beams (either side of the barrel line).
+- ENEMY_BUDGET 8 (not 10). Swarms: at most 3 bats and 3 bee-like enemies (MUECKE, SMALLWESPE)
+  awake near the screen.
+- The six recorded demos made again (the world changed); stage 1's routes from chained
+  HB_PATH searches (tools: /tmp scripts, see game/demorec.c).
+- Disc: `sega/HurricanP1m/HurricanP1m.cue`.
+

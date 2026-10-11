@@ -64,7 +64,7 @@ static void caves_draw_turned(const Pic *p, int frame, int32_t fx_, int32_t fy_,
 	const int x = (int)(fx_ >> 9), y = (int)(fy_ >> 9);
 	const int bx = mirror ? x + p->fw - (f.x0 + f.w) : x + f.x0;
 	const int by = y + p->fh - (f.y0 + f.h);
-	const int vx0 = view_x, vx1 = view_x + VIEW_W, vy0 = view_y, vy1 = view_y + VIEW_H;
+	const int vx0 = view_x, vx1 = view_x + VIEW_W, vy0 = view_y, vy1 = view_y + PLAY_H;
 	if (bx >= vx1 || by >= vy1 || bx + f.w <= vx0 || by + f.h <= vy0) return;
 	const int r0 = by < vy0 ? vy0 - by : 0;
 	const int r1 = by + f.h > vy1 ? vy1 - by : f.h;

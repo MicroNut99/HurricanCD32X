@@ -60,6 +60,8 @@
 #define MIRROR_N   336           /* bytes after the ring that copy its start (0x12E00..) */
 #define VIEW_W     322           /* pixels per line kept in view (320 shown + shift + 1) */
 #define VIEW_H     200
+#define HUD_H      24            /* P1m: the HUD's band at the top (drawn once, copied each frame) */
+#define PLAY_H     (VIEW_H - HUD_H)   /* the level's part of the screen, below the band */
 #define SCREEN_W   320
 
 #define NSTAGES    9             /* OJ001.PAK .. OJ009.PAK */
@@ -210,7 +212,7 @@ static inline int blk(int tx, int ty)
 /* ------------------------------------------------------------------ the linear ring */
 static uint8_t CLEAN[RING_LIN];          /* the tile layers as the view shows them (SDRAM) */
 static volatile uint8_t *ring;           /* the back buffer's ring (lin 0) */
-static int view_x, view_y;               /* this frame's view: world pixels [x, x + 322) x [y, y + 200) */
+static int view_x, view_y;               /* this frame's level view: world pixels [x, x + 322) x [y, y + PLAY_H), below the HUD band */
 static int cam_x, cam_y;                 /* the camera: world pixel shown at the screen's top-left */
 
 static inline uint32_t lin_of(int x, int y)
@@ -286,7 +288,7 @@ FAST static void rect_from_clean(int x0, int y0, int x1, int y1)
 	if (x0 < view_x) x0 = view_x;
 	if (y0 < view_y) y0 = view_y;
 	if (x1 > view_x + VIEW_W) x1 = view_x + VIEW_W;
-	if (y1 > view_y + VIEW_H) y1 = view_y + VIEW_H;
+	if (y1 > view_y + PLAY_H) y1 = view_y + PLAY_H;
 	if (x0 >= x1 || y0 >= y1) return;
 	for (int y = y0; y < y1; y++) fb_from_clean(lin_of(x0, y), x1 - x0);
 	px_copied += (uint32_t)((x1 - x0) * (y1 - y0));
@@ -340,7 +342,7 @@ FAST static void over_rect(int x0, int y0, int x1, int y1)
 	if (x0 < view_x) x0 = view_x;
 	if (y0 < view_y) y0 = view_y;
 	if (x1 > view_x + VIEW_W) x1 = view_x + VIEW_W;
-	if (y1 > view_y + VIEW_H) y1 = view_y + VIEW_H;
+	if (y1 > view_y + PLAY_H) y1 = view_y + PLAY_H;
 	if (x0 >= x1 || y0 >= y1) return;
 	for (int ty = y0 / 10; ty <= (y1 - 1) / 10; ty++)
 		for (int tx = x0 / 10; tx <= (x1 - 1) / 10; tx++)
@@ -377,17 +379,17 @@ FAST static void over_rect(int x0, int y0, int x1, int y1)
 typedef struct { int16_t x0, y0, x1, y1; } Rect;
 static int view_new_parts(int nx, int ny, int ox, int oy, Rect *out)
 {
-	if (nx - ox >= VIEW_W || ox - nx >= VIEW_W || ny - oy >= VIEW_H || oy - ny >= VIEW_H)
+	if (nx - ox >= VIEW_W || ox - nx >= VIEW_W || ny - oy >= PLAY_H || oy - ny >= PLAY_H)
 	{
-		out[0] = (Rect){ (int16_t)nx, (int16_t)ny, (int16_t)(nx + VIEW_W), (int16_t)(ny + VIEW_H) };
+		out[0] = (Rect){ (int16_t)nx, (int16_t)ny, (int16_t)(nx + VIEW_W), (int16_t)(ny + PLAY_H) };
 		return 1;
 	}
 	int n = 0;
 	/* rows the old view did not have, the full width */
 	if (ny < oy) out[n++] = (Rect){ (int16_t)nx, (int16_t)ny, (int16_t)(nx + VIEW_W), (int16_t)oy };
-	else if (ny > oy) out[n++] = (Rect){ (int16_t)nx, (int16_t)(oy + VIEW_H), (int16_t)(nx + VIEW_W), (int16_t)(ny + VIEW_H) };
+	else if (ny > oy) out[n++] = (Rect){ (int16_t)nx, (int16_t)(oy + PLAY_H), (int16_t)(nx + VIEW_W), (int16_t)(ny + PLAY_H) };
 	/* in the rows both have: the columns the old view did not have */
-	const int ry0 = ny > oy ? ny : oy, ry1 = (ny < oy ? ny : oy) + VIEW_H;
+	const int ry0 = ny > oy ? ny : oy, ry1 = (ny < oy ? ny : oy) + PLAY_H;
 	if (nx < ox) out[n++] = (Rect){ (int16_t)nx, (int16_t)ry0, (int16_t)ox, (int16_t)ry1 };
 	else if (nx > ox) out[n++] = (Rect){ (int16_t)(ox + VIEW_W), (int16_t)ry0, (int16_t)(nx + VIEW_W), (int16_t)ry1 };
 	return n;
@@ -411,7 +413,7 @@ static void rect_add(int x0, int y0, int x1, int y1)
 	if (x0 < view_x) x0 = view_x;
 	if (y0 < view_y) y0 = view_y;
 	if (x1 > view_x + VIEW_W) x1 = view_x + VIEW_W;
-	if (y1 > view_y + VIEW_H) y1 = view_y + VIEW_H;
+	if (y1 > view_y + PLAY_H) y1 = view_y + PLAY_H;
 	if (x0 >= x1 || y0 >= y1) return;
 	if (cur->nrects >= MAX_RECTS) { cur->overflow = 1; return; }
 	cur->rects[cur->nrects++] = (Rect){ (int16_t)x0, (int16_t)y0, (int16_t)x1, (int16_t)y1 };
@@ -421,6 +423,9 @@ static void rect_add(int x0, int y0, int x1, int y1)
  * tile and its block flags; CLEAN gets the cell again now, both frame buffers copy it from
  * CLEAN when they are drawn next */
 static void put16be(uint8_t *p, int v) { p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v; }
+static int wall_defer, nwall_pending;     /* P1m: walls shot away while the drawing runs alongside */
+static int16_t wall_pending[32];
+static void wall_redraw(int tx, int ty);
 static int wall_break(int tx, int ty)
 {
 	if (tx < 1 || ty < 1 || tx >= map_w - 1 || ty >= map_h - 1 || nbroken >= MAX_BROKEN) return 0;
@@ -434,6 +439,13 @@ static int wall_break(int tx, int ty)
 	nbroken++;
 	const uint32_t bit = (uint32_t)ty * (uint32_t)map_w + (uint32_t)tx;
 	broken_bits[bit >> 3] |= (uint8_t)(1u << (bit & 7));
+	if (wall_defer) { if (nwall_pending < 32) wall_pending[nwall_pending++] = (int16_t)(nbroken - 1); return 1; }
+	wall_redraw(tx, ty);
+	return 1;
+}
+/* the drawing part of a wall shot away: CLEAN and both frame buffers' lists */
+static void wall_redraw(int tx, int ty)
+{
 	const int x0 = tx * 10, y0 = ty * 10;
 	if (clean_valid)
 	{
@@ -441,7 +453,7 @@ static int wall_break(int tx, int ty)
 		if (a < clean_vx) a = clean_vx;
 		if (b < clean_vy) b = clean_vy;
 		if (e > clean_vx + VIEW_W) e = clean_vx + VIEW_W;
-		if (f > clean_vy + VIEW_H) f = clean_vy + VIEW_H;
+		if (f > clean_vy + PLAY_H) f = clean_vy + PLAY_H;
 		compose_clean(a, b, e, f);
 	}
 	for (int k = 0; k < 2; k++)
@@ -449,7 +461,6 @@ static int wall_break(int tx, int ty)
 		if (bufs[k].nrects >= MAX_RECTS) { bufs[k].overflow = 1; continue; }
 		bufs[k].rects[bufs[k].nrects++] = (Rect){ (int16_t)x0, (int16_t)y0, (int16_t)(x0 + 10), (int16_t)(y0 + 10) };
 	}
-	return 1;
 }
 
 /* ------------------------------------------------------------------ sprites */
@@ -466,7 +477,7 @@ FAST static void draw_frame(const Frame *f, int fw, int x, int y, int mirror, in
 	if (!f->data) return;
 	const int bx = mirror ? x + fw - (f->x0 + f->w) : x + f->x0;
 	const int by = y + f->y0;
-	const int vx0 = view_x, vx1 = view_x + VIEW_W, vy0 = view_y, vy1 = view_y + VIEW_H;
+	const int vx0 = view_x, vx1 = view_x + VIEW_W, vy0 = view_y, vy1 = view_y + PLAY_H;
 	if (bx >= vx1 || by >= vy1 || bx + f->w <= vx0 || by + f->h <= vy0) return;
 	const int r0 = by < vy0 ? vy0 - by : 0;
 	const int r1 = by + f->h > vy1 ? vy1 - by : f->h;
@@ -517,6 +528,21 @@ static void draw_pic(const Pic *p, int frame, int32_t fx, int32_t fy, int mirror
 /* ------------------------------------------------------------------ HUD text */
 #include "mars/font3x5.h"
 
+/* P1m: the HUD is drawn into its band (hud_into_band) only when what it shows changes; each
+ * frame the band's rows are copied to the top of the screen */
+static uint8_t hud_band[HUD_H][SCREEN_W];
+static int hud_into_band;
+static void band_put(int sx, int sy, const uint8_t *src, int w, int keyed)
+{
+	if (sy < 0 || sy >= HUD_H) return;
+	for (int x = 0; x < w; x++)
+	{
+		const int bx = sx + x;
+		if (bx < 0 || bx >= SCREEN_W || (keyed && !src[x])) continue;
+		hud_band[sy][bx] = src[x];
+	}
+}
+
 /* a line of text at screen (sx, sy): 3x5 font doubled, with a dark shadow */
 static void hud_text(int sx, int sy, const char *t, int colour)
 {
@@ -545,17 +571,20 @@ static void hud_text(int sx, int sy, const char *t, int colour)
 					}
 			}
 		}
-		fb_put(lin_of(cam_x + sx, view_y + sy + ry), rowbuf, w, 1);
+		if (hud_into_band) band_put(sx, sy + ry, rowbuf, w, 1);
+		else fb_put(lin_of(cam_x + sx, cam_y + sy + ry), rowbuf, w, 1);
 	}
-	rect_add(cam_x + sx, view_y + sy, cam_x + sx + w, view_y + sy + 11);
+	if (!hud_into_band) rect_add(cam_x + sx, cam_y + sy, cam_x + sx + w, cam_y + sy + 11);
 }
 
 /* a filled box on the screen */
 static void hud_box(int sx, int sy, int w, int h, int colour)
 {
 	memset(rowbuf, colour, (size_t)w);
-	for (int y = 0; y < h; y++) fb_put(lin_of(cam_x + sx, view_y + sy + y), rowbuf, w, 0);
-	rect_add(cam_x + sx, view_y + sy, cam_x + sx + w, view_y + sy + h);
+	for (int y = 0; y < h; y++)
+		if (hud_into_band) band_put(sx, sy + y, rowbuf, w, 0);
+		else fb_put(lin_of(cam_x + sx, cam_y + sy + y), rowbuf, w, 0);
+	if (!hud_into_band) rect_add(cam_x + sx, cam_y + sy, cam_x + sx + w, cam_y + sy + h);
 }
 
 static char *put_dec(char *p, uint32_t v, int digits)
@@ -1204,8 +1233,10 @@ static void aim_at(int fromx, int fromy, int v, fx *xs, fx *ys)
 }
 
 /* the added kinds' code */
-/* the bats awake at once: never more than MAX_BATS (the user's request) */
-#define MAX_BATS 5
+/* swarms awake at once (the user's request): bats at most MAX_BATS, the bee-like ones (the
+ * mosquito MUECKE, the small wasp) at most MAX_BEES */
+#define MAX_BATS 3
+#define MAX_BEES 3
 static __attribute__((unused)) int bats_awake(void)
 {
 	int n = 0;
@@ -1832,7 +1863,7 @@ static void player_shoot(void)
 	if (pl.sel == 0)                          /* ----- spread shot (SPREADSHOT) */
 	{
 		if (lvl >= 5) { mx -= 2; my -= 2; }
-		const int n = lvl >= 4 ? 7 : lvl == 3 ? 5 : lvl == 2 ? 3 : 1;   /* 1/3/5/7 shots 8 deg apart */
+		const int n = lvl >= 3 ? 5 : lvl == 2 ? 3 : 1;   /* 1/3/5 shots 8 deg apart (P1m: 5 at the top, not 7 - for the frame rate) */
 		for (int i = 0; i < n; i++)
 		{
 			const int a = ang + (i - n / 2) * 8;
@@ -1855,20 +1886,20 @@ static void player_shoot(void)
 		const int big = lvl >= 5;             /* LASERSHOTBIG at level 5+ (bigger beam) */
 		const Pic *p = big ? &P_plaserbig : &P_plaser;
 		const int dmg = big ? (lvl >= 7 ? 16 : 12) : (lvl >= 2 ? 10 : 8);
-		const int n = lvl >= 7 ? 3 : lvl >= 3 ? 2 : 1;   /* more parallel beams by level */
+		const int n = lvl >= 3 ? 2 : 1;   /* more parallel beams by level (P1m: 2 at the top, not 3 - for the frame rate) */
 		const int perpx = -sin_d(ang), perpy = cos_d(ang);   /* unit normal (8.8) */
 		/* the middle beam's centre on the barrel's line: where the (big) spread shot's middle is
 		 * (the spread shot's place is its picture's corner, aligned with the barrel in P1f) */
 		const int cx = mx - 2 + P_spreadbig.fw, cy = my - 2 + P_spreadbig.fh;
 		for (int i = 0; i < n; i++)
 		{
-			const int o = i - n / 2;
+			const int o2 = 2 * i - (n - 1);   /* -1 / +1 for two beams: either side of the barrel's line */
 			Shot *s = shot_new();
 			if (!s) break;
 			s->kind = SH_PLASER;
 			s->pic = p;
-			s->x = pl.x + FX(cx) + perpx * 12 * o - FX(p->fw);
-			s->y = pl.y + FX(cy) + perpy * 12 * o - FX(p->fh);
+			s->x = pl.x + FX(cx) + perpx * 6 * o2 - FX(p->fw);
+			s->y = pl.y + FX(cy) + perpy * 6 * o2 - FX(p->fh);
 			s->xs = cos_d(ang) * 60;
 			s->ys = sin_d(ang) * 60;
 			s->dmg = (int16_t)dmg;
@@ -2479,7 +2510,7 @@ static void shots_step(void)
 }
 
 /* ------------------------------------------------------------------ the world's step */
-#define ENEMY_BUDGET 10
+#define ENEMY_BUDGET 8                   /* P1m: 8, not 10 (for the frame rate) */
 #define LIFT_BUDGET 5                   /* while a kind holds the camera (the elevator ride) */
 static int enemy_load;                  /* the enemies at or near the screen, big ones twice */
 /* how much an enemy kind counts against the budget: 0 for pick-ups, platforms, triggers */
@@ -2502,13 +2533,18 @@ static void world_activate(void)
 	 * the screen are shot, the next ones come in; a big one counts twice */
 	int budget = (cam_lock_held ? LIFT_BUDGET : ENEMY_BUDGET) - enemy_load;
 	int load = 0;
-	/* the bats already about (a swarm is never more than MAX_BATS) */
-	int bats_near = 0;
+	/* the bats and bees already about (a swarm is never more than MAX_BATS / MAX_BEES) */
+	int bats_near = 0, bees_near = 0;
 	for (int i = 0; i < nents; i++)
-		if (ents[i].type == E_FLEDERMAUS && ents[i].active)
+		if (ents[i].active && (ents[i].type == E_FLEDERMAUS || ents[i].type == E_MUECKE || ents[i].type == E_SMALLWESPE))
 		{
 			const int x = ents[i].x >> 8, y = ents[i].y >> 8;
-			if (x > sx0 - 640 && x < sx1 + 640 && y > sy0 - 480 && y < sy1 + 480) bats_near++;
+			if (x > sx0 - 640 && x < sx1 + 640 && y > sy0 - 480 && y < sy1 + 480)
+			{
+				if (ents[i].type == E_FLEDERMAUS) bats_near++;
+				else bees_near++;
+			}
+			else ents[i].active = 0;             /* flown far off: asleep again (it counts no more) */
 		}
 	for (int i = 0; i < nents; i++)
 	{
@@ -2522,8 +2558,8 @@ static void world_activate(void)
 			{
 				const int w = enemy_weight(e->type);
 				if (w && w > budget) continue;          /* waits for room */
-				if (e->type == E_FLEDERMAUS && bats_near >= MAX_BATS) continue;   /* at most 5 bats at once */
-				if (e->type == E_FLEDERMAUS) bats_near++;
+				if (e->type == E_FLEDERMAUS) { if (bats_near >= MAX_BATS) continue; bats_near++; }
+				if (e->type == E_MUECKE || e->type == E_SMALLWESPE) { if (bees_near >= MAX_BEES) continue; bees_near++; }
 				budget -= w;
 				e->active = 1;
 				e->dir = pcx() > ecx(e);
@@ -2544,15 +2580,27 @@ static void world_activate(void)
 	enemy_load = load;
 }
 
+static uint32_t world_steps;           /* steps run (the far enemies' every other step) */
 static void world_step(void)
 {
 	cam_lock = 0;
 	dmg_src = -1; dmg_src_shot = 0;
 	player_step();
+	world_steps++;
+	/* far off the screen (P1m, for the frame rate): an enemy runs every other step - not a boss,
+	 * nothing to stand on, not while the camera is held (the elevator) */
+	const int fx0 = cam_x * 2 - 240, fy0 = cam_y * 2 - 240, fx1 = cam_x * 2 + 640 + 240, fy1 = cam_y * 2 + 400 + 240;
 	for (int k = 0; k < nactive; k++)
 	{
 		Ent *e = &ents[active_list[k]];
 		if (e->type == E_NONE) continue;
+		if (!cam_lock_held && ((uint32_t)active_list[k] + world_steps) & 1)
+		{
+			const int x = e->x >> 8, y = e->y >> 8;
+			if ((x < fx0 || x > fx1 || y < fy0 || y > fy1) && !kinds[e->type].boss &&
+			    e->type != E_PLATTFORM && e->type != E_BRUECKE && e->type != E_POWERBLOCK)
+				continue;
+		}
 		dmg_src = e->type; dmg_src_shot = 0;
 		ent_step(e, active_list[k]);
 		if (e->type != E_NONE && e->energy <= 0 && ((kinds[e->type].shootable && e->type != E_POWERBLOCK) || e->type > E_SECRET))
@@ -2677,7 +2725,7 @@ static void stage_start(void)
 #endif
 	if (demo_warp) { start_x = FX(demo_warp_x); start_y = FX(demo_warp_y); }
 	/* what a stage starts from (a recorded demo needs the same world every time) */
-	enemy_load = 0; cam_lock = cam_lock_held = 0; pl_off_t = 0; secret_t = 0;
+	enemy_load = 0; cam_lock = cam_lock_held = 0; pl_off_t = 0; secret_t = 0; world_steps = 0;
 	player_spawn(start_x, start_y);
 	pl.dir = 1;
 	pl.safe_x = start_x;
@@ -2692,7 +2740,7 @@ static void camera_follow(int snap)
 	/* the player a little left of the middle when he looks right (and the other way round),
 	 * a little below the middle; eased */
 	int tx = ((pl.x >> 8) + 35) / 2 - SCREEN_W / 2 + pl.dir * 30;
-	int ty = ((pl.y >> 8) + 40) / 2 - VIEW_H / 2 - 10;
+	int ty = ((pl.y >> 8) + 40) / 2 - VIEW_H / 2 - 10 - HUD_H / 2;   /* the middle of the level's part */
 	if (cam_lock) { tx = cam_lock_x / 2; ty = cam_lock_y / 2; }
 	cam_lock_held = cam_lock;
 	if (boss_lock_on && !snap)
@@ -2787,7 +2835,7 @@ static void draw_world(uint32_t t)
 		{
 			/* a vertical stack of the power-line sprite down the column */
 			const int ph = 2 * P_powerline.fh > 0 ? 2 * P_powerline.fh : 20;
-			for (int yy = view_y * 2; yy < (view_y + VIEW_H) * 2; yy += ph)
+			for (int yy = view_y * 2; yy < (view_y + PLAY_H) * 2; yy += ph)
 				draw_pic(&P_powerline, s->anim % (P_powerline.count ? P_powerline.count : 1),
 				         s->x, FX(yy), s->xs > 0);
 			continue;
@@ -2828,28 +2876,38 @@ static int find_colour(int r, int g, int b)
 static void draw_hud(uint32_t frame)
 {
 	char t[48], *q;
-	/* energy bar */
+	/* the band: drawn again only when something in it changed (P1m) */
+	static int32_t sig_last[16];
+	static int band_ok;
 	const int e = pl.energy > 0 ? (int)(pl.energy >> 8) : 0;
-	hud_box(6, 6, 54, 8, col_dark);
-	const int w = e / 2;
-	if (w > 0) hud_box(8, 8, w, 4, e > 50 ? col_green : e > 25 ? col_yellow : col_red);
-	/* the original's HUD (HUD.cpp: lives, score, the weapons with their levels, grenades /
-	 * power lines / smart bombs, diamonds) stripped down to numbers and short names, two rows */
-	q = put_str(t, "x");
-	put_dec(q, (uint32_t)(pl.lives > 0 ? pl.lives : 0), 1);
-	hud_text(64, 5, t, col_light);
-	put_dec(t, pl.score, 7);
-	hud_text(96, 5, t, col_light);
-	q = put_str(t, "GEMS ");
-	put_dec(q, (uint32_t)pl.gems, 3);
-	hud_text(SCREEN_W - 8 * 8 - 6, 5, t, col_light);
+	const int32_t sig[16] = { e, pl.lives, (int32_t)pl.score, pl.gems, pl.wlevel[0], pl.wlevel[1], pl.wlevel[2], pl.blitzlen,
+	                          pl.sel, pl.grenades, pl.powerlines, pl.smartbombs, col_dark, col_light, col_yellow, col_grey };
+	if (!band_ok || memcmp(sig, sig_last, sizeof sig))
 	{
+		memcpy(sig_last, sig, sizeof sig);
+		band_ok = 1;
+		hud_into_band = 1;
+		memset(hud_band, col_dark, sizeof hud_band);
+		/* energy bar */
+		hud_box(6, 3, 54, 8, col_dark);
+		const int w = e / 2;
+		if (w > 0) hud_box(8, 5, w, 4, e > 50 ? col_green : e > 25 ? col_yellow : col_red);
+		/* the original's HUD (HUD.cpp: lives, score, the weapons with their levels, grenades /
+		 * power lines / smart bombs, diamonds) stripped down to numbers and short names, two rows */
+		q = put_str(t, "x");
+		put_dec(q, (uint32_t)(pl.lives > 0 ? pl.lives : 0), 1);
+		hud_text(64, 1, t, col_light);
+		put_dec(t, pl.score, 7);
+		hud_text(96, 1, t, col_light);
+		q = put_str(t, "GEMS ");
+		put_dec(q, (uint32_t)pl.gems, 3);
+		hud_text(SCREEN_W - 8 * 8 - 6, 1, t, col_light);
 		static const char *const wn[4] = { "SPR", "LAS", "BNC", "LIT" };
 		for (int i = 0; i < 4; i++)
 		{
 			q = put_str(t, wn[i]);
 			put_dec(q, (uint32_t)(i < 3 ? pl.wlevel[i] : pl.blitzlen - 1), 1);
-			hud_text(6 + 40 * i, 16, t, i == pl.sel ? col_yellow : col_grey);
+			hud_text(6 + 40 * i, 12, t, i == pl.sel ? col_yellow : col_grey);
 		}
 		q = put_str(t, "GR");
 		q = put_dec(q, (uint32_t)(pl.grenades > 0 ? pl.grenades : 0), 1);
@@ -2857,8 +2915,10 @@ static void draw_hud(uint32_t frame)
 		q = put_dec(q, (uint32_t)(pl.powerlines > 0 ? pl.powerlines : 0), 1);
 		q = put_str(q, " SB");
 		put_dec(q, (uint32_t)(pl.smartbombs > 0 ? pl.smartbombs : 0), 1);
-		hud_text(SCREEN_W - 11 * 8 - 6, 16, t, col_light);
+		hud_text(SCREEN_W - 11 * 8 - 6, 12, t, col_light);
+		hud_into_band = 0;
 	}
+	for (int r = 0; r < HUD_H; r++) fb_put(lin_of(cam_x, cam_y + r), hud_band[r], SCREEN_W, 0);
 	/* the boss's energy */
 	if (boss_bar_t > 0)
 	{
@@ -2891,7 +2951,12 @@ enum { GS_MENU, GS_INTRO, GS_PLAY, GS_PAUSE, GS_CLEAR, GS_OVER, GS_CREDITS, GS_S
 #define TRACK_ONCE     0x8000
 /* the music (options menu: MUSIC ON / OFF): every track goes through music() */
 static int opt_music = 1;
-static void music(int track) { plat_music(opt_music ? track : 0); }
+static int music_in_job, music_queued = -1;   /* P1m: the steps on the slave SH2 leave the CD to the master */
+static void music(int track)
+{
+	if (music_in_job) { music_queued = track; return; }
+	plat_music(opt_music ? track : 0);
+}
 #define TRACK_BOSS(n)  (14 + (n))       /* 15-23: the stages' boss songs (14 = the credits) */
 __attribute__((unused)) static void music_boss(void) { music(TRACK_BOSS(stage)); }
 __attribute__((unused)) static void music_stage(void) { music(TRACK_STAGE(stage)); }
@@ -3119,6 +3184,154 @@ static void demo_bot_start(int n)
 #include "credits.c"
 #include "story.c"
 
+/* ---- the main loop's state (P1m: file-wide, the slave SH2 runs the steps) */
+static int gs = GS_MENU, gs_t, demo_next, steps, hit;
+static uint32_t last_ms, acc;
+static int par_on = 1;                  /* PAUSE: 2ND CPU ON / OFF */
+
+/* this frame's steps (60 a second) */
+static void run_steps(void)
+{
+	for (int s = 0; s < steps; s++)
+	{
+		gs_t++;
+		switch (gs)
+		{
+		case GS_INTRO:
+			if (demo_rec >= 0) { camera_follow(0); world_activate(); }   /* step by step (see the recorded demos) */
+			if (gs_t > 120 || (hit & (PAD_B | PAD_C | PAD_A))) { gs = GS_PLAY; gs_t = 0; }
+			break;
+		case GS_PLAY:
+			if (demo_rec >= 0) pad = demo_rec_pad();
+			else if (demo) pad = demo_pad();
+			world_step();
+			if (demo_rec >= 0)
+			{
+				camera_follow(0);
+				world_activate();
+				if (demo_rec_check()) { demo_next = 1; s = steps; break; }
+			}
+			if (pl.state == PS_DEAD && pl.dead_t > 90)
+			{
+				pl.lives--;
+				if (pl.lives <= 0) { gs = GS_OVER; gs_t = 0; music(TRACK_OVER | TRACK_ONCE); }
+				else
+				{
+					/* the user's request: every life starts with all weapons full again, so
+					 * no "weapon one level down" here - player_spawn refills them */
+					player_spawn(pl.safe_x, pl.safe_y - FX(10));
+					pl.safe_t = 150;          /* 2.5 s without damage */
+				}
+			}
+			if (stage_clear_t && demo) { demo_next = 1; s = steps; break; }   /* the demo ends with the stage */
+			if (stage_clear_t) { gs = GS_CLEAR; gs_t = 0; music(TRACK_CLEAR | TRACK_ONCE); sfx(SFX_SECRET); }
+			break;
+		case GS_PAUSE:
+			break;
+		case GS_CLEAR:
+			fx_tick();
+			if (gs_t > 60 * 8 || (gs_t > 120 && (hit & PAD_START)))
+			{
+				if (stage < NSTAGES) { stage_go(stage + 1); gs = GS_INTRO; }
+				else { gs = GS_MENU; menu_page = 0; menu_sel = 0; music(TRACK_MENU); }
+				gs_t = 0;
+				s = steps;
+				last_ms = plat_ticks_ms(); acc = 0;
+			}
+			break;
+		case GS_OVER:
+			fx_tick();
+			if (gs_t > 60 * 8 || (gs_t > 120 && (hit & PAD_START)))
+			{
+				gs = GS_MENU; gs_t = 0; menu_page = 0; menu_sel = 0;
+				music(TRACK_MENU);
+				s = steps;
+			}
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+/* after the steps: the camera and the entities' wake-up (a recorded demo does them each step) */
+static void after_steps(void)
+{
+	if (demo_rec < 0)
+	{
+		if (gs == GS_PLAY || gs == GS_INTRO) camera_follow(0);
+		world_activate();
+	}
+}
+
+/* the frame buffer to draw and the view (the camera as it is now) */
+static void frame_begin(void)
+{
+	ring = (volatile uint8_t *)plat_scroll_ring();
+	cur = &bufs[plat_back_index()];
+	view_x = cam_x & ~1;              /* the line table starts lines at even bytes */
+	view_y = cam_y + HUD_H;           /* the level below the HUD's band */
+}
+
+/* the level's tiles: what came into view into CLEAN, and into this frame buffer */
+static void draw_tiles(void)
+{
+	/* the clean tile layers: what came into view */
+	{
+		Rect parts[2];
+		const int n = clean_valid ? view_new_parts(view_x, view_y, clean_vx, clean_vy, parts)
+		                          : (parts[0] = (Rect){ (int16_t)view_x, (int16_t)view_y, (int16_t)(view_x + VIEW_W), (int16_t)(view_y + PLAY_H) }, 1);
+		for (int i = 0; i < n; i++) compose_clean(parts[i].x0, parts[i].y0, parts[i].x1, parts[i].y1);
+		clean_valid = 1; clean_vx = view_x; clean_vy = view_y;
+	}
+	/* this buffer: what came into view since its last frame, and what that frame drew on */
+	if (!cur->valid || cur->overflow)
+		rect_from_clean(view_x, view_y, view_x + VIEW_W, view_y + PLAY_H);
+	else
+	{
+		Rect parts[2];
+		const int n = view_new_parts(view_x, view_y, cur->vx, cur->vy, parts);
+		for (int i = 0; i < n; i++) rect_from_clean(parts[i].x0, parts[i].y0, parts[i].x1, parts[i].y1);
+		for (int i = 0; i < cur->nrects; i++)
+			rect_from_clean(cur->rects[i].x0, cur->rects[i].y0, cur->rects[i].x1, cur->rects[i].y1);
+	}
+	cur->valid = 1; cur->overflow = 0; cur->nrects = 0;
+	cur->vx = view_x; cur->vy = view_y;
+}
+
+/* the parallel job: 0 (this SH2) the tiles, 1 (the slave) the steps. The slave's own stack is
+ * 2 KB (port/mars/crt0_oj.s, unchanged): the steps run on a stack of their own */
+static void par_steps(void) { run_steps(); after_steps(); }
+#ifdef OJ32X_MARS
+static uint32_t slave_stack[2048] __attribute__((aligned(16)));   /* 8 KB */
+void call_on_stack(void (*fn)(void), void *top);
+__asm__(
+	"	.text\n"
+	"	.align 2\n"
+	"	.global _call_on_stack\n"
+	"_call_on_stack:\n"           /* r4 = fn, r5 = the new stack's top */
+	"	mov.l	r14,@-r15\n"
+	"	sts.l	pr,@-r15\n"
+	"	mov	r15,r14\n"
+	"	mov	r5,r15\n"
+	"	jsr	@r4\n"
+	"	nop\n"
+	"	mov	r14,r15\n"
+	"	lds.l	@r15+,pr\n"
+	"	rts\n"
+	"	mov.l	@r15+,r14\n");
+#endif
+static void par_job(void *arg, int part)
+{
+	(void)arg;
+	if (part == 0) draw_tiles();
+#ifdef OJ32X_MARS
+	else call_on_stack(par_steps, slave_stack + 2048);
+#else
+	else par_steps();
+#endif
+}
+
 int main(int argc, char *argv[])
 {
 	(void)argc; (void)argv;
@@ -3126,9 +3339,10 @@ int main(int argc, char *argv[])
 	load_resident();
 	music(TRACK_MENU);
 
-	int gs = GS_MENU, gs_t = 0, attract = 0, demo_next = 0, demo_first = 1;
+	int attract = 0, demo_first = 1;
 	uint32_t idle_ms = 0;
-	uint32_t last_ms = plat_ticks_ms(), acc = 0, frame = 0;
+	last_ms = plat_ticks_ms();
+	uint32_t frame = 0;
 	/* the timing line (pause menu: TIMING ON / OFF): milliseconds per frame, averaged over 16 frames */
 	enum { T_LOGIC, T_MAP, T_COPY, T_SPR, T_OVR, T_HUD, T_WAIT, T_N };
 	int show_times = 0, pause_sel = 0;
@@ -3142,13 +3356,13 @@ int main(int argc, char *argv[])
 		last_ms = now;
 		if (dms > 200) dms = 200;
 		acc += dms * 60u;
-		int steps = (int)(acc / 1000u);
+		steps = (int)(acc / 1000u);
 		acc -= (uint32_t)steps * 1000u;
 		if (steps > 6) steps = 6;
 
 		pad = plat_read_pad();
 		const int pad_real = pad;               /* the demo replaces pad in its steps */
-		int hit = pad & ~pad_prev;
+		hit = pad & ~pad_prev;
 		uint32_t t0 = plat_prof_us(), t1;
 		if (demo && gs != GS_MENU && !hit && (demo_next || (demo_rec < 0 && gs == GS_PLAY && demo_t > 60 * 120)))
 		{
@@ -3186,8 +3400,8 @@ int main(int argc, char *argv[])
 		else if (gs == GS_PAUSE)
 		{
 			/* the pause menu: CONTINUE / MAIN MENU / TIMING ON-OFF */
-			if (hit & PAD_UP) pause_sel = (pause_sel + 2) % 3;
-			if (hit & PAD_DOWN) pause_sel = (pause_sel + 1) % 3;
+			if (hit & PAD_UP) pause_sel = (pause_sel + 3) % 4;
+			if (hit & PAD_DOWN) pause_sel = (pause_sel + 1) % 4;
 			if ((hit & PAD_START) || ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 0)) gs = GS_PLAY;
 			else if ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 1)
 			{
@@ -3197,6 +3411,7 @@ int main(int argc, char *argv[])
 				continue;
 			}
 			else if ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 2) show_times ^= 1;
+			else if ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 3) par_on ^= 1;
 		}
 
 		if (gs == GS_STORY)
@@ -3303,108 +3518,49 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-		for (int s = 0; s < steps; s++)
+		/* P1m: the second SH2 runs the steps while this one brings the level's tiles up to date
+		 * (the view of the camera before them) - only while playing; PAUSE: 2ND CPU ON / OFF */
+		const int par = par_on && gs == GS_PLAY && steps > 0;
+		if (par)
 		{
-			gs_t++;
-			switch (gs)
+			t1 = plat_prof_us(); tacc[T_LOGIC] += t1 - t0;
+			plat_wait_flip();
+			t0 = plat_prof_us(); tacc[T_WAIT] += t0 - t1;
+			frame_begin();
+			wall_defer = 1; music_in_job = 1;
+			plat_parallel(par_job, 0);
+			wall_defer = 0; music_in_job = 0;
+#ifdef OJ32X_MARS
+			*(volatile uint8_t *)0xFFFFFE92 = 0x11;   /* the slave's writes: purge this SH2's cache */
+#endif
+			for (int i = 0; i < nwall_pending; i++)
 			{
-			case GS_INTRO:
-				if (demo_rec >= 0) { camera_follow(0); world_activate(); }   /* step by step (see the recorded demos) */
-				if (gs_t > 120 || (hit & (PAD_B | PAD_C | PAD_A))) { gs = GS_PLAY; gs_t = 0; }
-				break;
-			case GS_PLAY:
-				if (demo_rec >= 0) pad = demo_rec_pad();
-				else if (demo) pad = demo_pad();
-				world_step();
-				if (demo_rec >= 0)
-				{
-					camera_follow(0);
-					world_activate();
-					if (demo_rec_check()) { demo_next = 1; s = steps; break; }
-				}
-				if (pl.state == PS_DEAD && pl.dead_t > 90)
-				{
-					pl.lives--;
-					if (pl.lives <= 0) { gs = GS_OVER; gs_t = 0; music(TRACK_OVER | TRACK_ONCE); }
-					else
-					{
-						/* the user's request: every life starts with all weapons full again, so
-						 * no "weapon one level down" here - player_spawn refills them */
-						player_spawn(pl.safe_x, pl.safe_y - FX(10));
-						pl.safe_t = 150;          /* 2.5 s without damage */
-					}
-				}
-				if (stage_clear_t && demo) { demo_next = 1; s = steps; break; }   /* the demo ends with the stage */
-				if (stage_clear_t) { gs = GS_CLEAR; gs_t = 0; music(TRACK_CLEAR | TRACK_ONCE); sfx(SFX_SECRET); }
-				break;
-			case GS_PAUSE:
-				break;
-			case GS_CLEAR:
-				fx_tick();
-				if (gs_t > 60 * 8 || (gs_t > 120 && (hit & PAD_START)))
-				{
-					if (stage < NSTAGES) { stage_go(stage + 1); gs = GS_INTRO; }
-					else { gs = GS_MENU; menu_page = 0; menu_sel = 0; music(TRACK_MENU); }
-					gs_t = 0;
-					s = steps;
-					last_ms = plat_ticks_ms(); acc = 0;
-				}
-				break;
-			case GS_OVER:
-				fx_tick();
-				if (gs_t > 60 * 8 || (gs_t > 120 && (hit & PAD_START)))
-				{
-					gs = GS_MENU; gs_t = 0; menu_page = 0; menu_sel = 0;
-					music(TRACK_MENU);
-					s = steps;
-				}
-				break;
-			default:
-				break;
+				const int k = wall_pending[i];
+				wall_redraw(broken[k].tx, broken[k].ty);
+				rect_from_clean(broken[k].tx * 10, broken[k].ty * 10, broken[k].tx * 10 + 10, broken[k].ty * 10 + 10);
 			}
+			nwall_pending = 0;
+			if (music_queued >= 0) { music(music_queued); music_queued = -1; }
+			t1 = plat_prof_us(); tacc[T_LOGIC] += t1 - t0; t0 = t1;
 		}
+		else run_steps();
 		pad_prev = pad_real;                    /* the player's own buttons (not the demo's) */
 		tms += dms;
 
 		if (gs == GS_MENU) continue;           /* the game ended: the menu from the next frame */
-		if (demo_rec < 0)                      /* (a recorded demo: in its steps) */
+		if (!par)
 		{
-			if (gs == GS_PLAY || gs == GS_INTRO) camera_follow(0);
-			world_activate();
+			after_steps();
+
+			/* ---- draw */
+			t1 = plat_prof_us(); tacc[T_LOGIC] += t1 - t0;
+			plat_wait_flip();
+			t0 = plat_prof_us(); tacc[T_WAIT] += t0 - t1;
+			frame_begin();
+			draw_tiles();
+			t1 = plat_prof_us(); tacc[T_COPY] += t1 - t0; t0 = t1;
 		}
 
-		/* ---- draw */
-		t1 = plat_prof_us(); tacc[T_LOGIC] += t1 - t0;
-		plat_wait_flip();
-		t0 = plat_prof_us(); tacc[T_WAIT] += t0 - t1;
-		ring = (volatile uint8_t *)plat_scroll_ring();
-		cur = &bufs[plat_back_index()];
-		view_x = cam_x & ~1;              /* the line table starts lines at even bytes */
-		view_y = cam_y;
-
-		/* the clean tile layers: what came into view */
-		{
-			Rect parts[2];
-			const int n = clean_valid ? view_new_parts(view_x, view_y, clean_vx, clean_vy, parts)
-			                          : (parts[0] = (Rect){ (int16_t)view_x, (int16_t)view_y, (int16_t)(view_x + VIEW_W), (int16_t)(view_y + VIEW_H) }, 1);
-			for (int i = 0; i < n; i++) compose_clean(parts[i].x0, parts[i].y0, parts[i].x1, parts[i].y1);
-			clean_valid = 1; clean_vx = view_x; clean_vy = view_y;
-		}
-		t1 = plat_prof_us(); tacc[T_MAP] += t1 - t0; t0 = t1;
-		/* this buffer: what came into view since its last frame, and what that frame drew on */
-		if (!cur->valid || cur->overflow)
-			rect_from_clean(view_x, view_y, view_x + VIEW_W, view_y + VIEW_H);
-		else
-		{
-			Rect parts[2];
-			const int n = view_new_parts(view_x, view_y, cur->vx, cur->vy, parts);
-			for (int i = 0; i < n; i++) rect_from_clean(parts[i].x0, parts[i].y0, parts[i].x1, parts[i].y1);
-			for (int i = 0; i < cur->nrects; i++)
-				rect_from_clean(cur->rects[i].x0, cur->rects[i].y0, cur->rects[i].x1, cur->rects[i].y1);
-		}
-		cur->valid = 1; cur->overflow = 0; cur->nrects = 0;
-		cur->vx = view_x; cur->vy = view_y;
-		t1 = plat_prof_us(); tacc[T_COPY] += t1 - t0; t0 = t1;
 
 		/* sprites, then the walls over them */
 		over_list_n = 0;
@@ -3431,6 +3587,8 @@ int main(int argc, char *argv[])
 			hud_text(SCREEN_W / 2 - 52, 108, pause_sel == 1 ? "> MAIN MENU" : "  MAIN MENU", pause_sel == 1 ? col_yellow : col_light);
 			hud_text(SCREEN_W / 2 - 52, 124, show_times ? (pause_sel == 2 ? "> TIMING ON" : "  TIMING ON") : (pause_sel == 2 ? "> TIMING OFF" : "  TIMING OFF"),
 			         pause_sel == 2 ? col_yellow : col_light);
+			hud_text(SCREEN_W / 2 - 52, 140, par_on ? (pause_sel == 3 ? "> 2ND CPU ON" : "  2ND CPU ON") : (pause_sel == 3 ? "> 2ND CPU OFF" : "  2ND CPU OFF"),
+			         pause_sel == 3 ? col_yellow : col_light);
 		}
 		if (gs == GS_CLEAR) hud_text(SCREEN_W / 2 - 48, 84, "STAGE CLEAR", col_light);
 		if (gs == GS_OVER) hud_text(SCREEN_W / 2 - 36, 84, "GAME OVER", col_light);

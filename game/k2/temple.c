@@ -35,7 +35,7 @@ static void temple_draw_cut(const Pic *p, int frame, int32_t fx_, int32_t fy, in
 	if (!p->count) return;
 	Frame f;
 	frame_of(p, frame, &f);
-	const int ty = top >> 1, sy = (int)(fy >> 9), vy = view_y, vb = view_y + VIEW_H;
+	const int ty = top >> 1, sy = (int)(fy >> 9), vy = view_y, vb = view_y + PLAY_H;
 	if (ty <= vy) { draw_frame(&f, p->fw, (int)(fx_ >> 9), sy, 0, 1); return; }
 	if (ty >= vb) return;
 	const int by = sy + f.y0;

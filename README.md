@@ -9,7 +9,7 @@ be recompiled (its game logic is floating point; the SH2 has no FPU), and that a
 could reach Jazz-like frame rates *if* the 32X can draw Hurrican's scenes fast enough. B1 measured
 it on the console; P1 is the first playable build.
 
-## P1l: all stages, all weapons, the bosses, recorded attract demos
+## P1m: all stages, all weapons, the bosses, recorded attract demos
 
 The game starts at a menu:
 
@@ -30,7 +30,7 @@ The game starts at a menu:
 
 Up / Down choose, Left / Right change, B, C, A or Start select. A minute in the menus without a
 button starts the attract mode: one of the recorded demos, picked at random (three of stage 1,
-three of stage 2, each about a minute, made along the routes of recordings of the original game);
+three of stage 2, up to about a minute each, made along the routes of recordings of the original game);
 any button returns. The recorded demos are not in the menu. After a stage is cleared the
 next one loads; after game over (or the last stage) the menu returns. Every life starts with all
 weapons at their top level and Hurrican's stock of grenades, power lines and smart bombs.
@@ -168,7 +168,7 @@ Needs:
     HURRICAN_DATA=<Hurrican's data folder> ./build.sh 2>&1 | tee build_log.txt
 
 or `tools/make_disc.sh`, which also takes the data from `Hurrican-master.zip` next to this folder
-and copies the disc to `sega/HurricanP1l/`. The disc: `cd32x/subcpu/HurricanP1l.cue` / `.bin`
+and copies the disc to `sega/HurricanP1m/`. The disc: `cd32x/subcpu/HurricanP1m.cue` / `.bin`
 (data track + 23 audio tracks).
 
 The recorded demos (`game/demo_data.h`): the buttons of every 60 Hz step. In a demo the world is

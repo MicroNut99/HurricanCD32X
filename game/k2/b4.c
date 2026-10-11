@@ -142,9 +142,9 @@ static int b4_colour(int r, int g, int b)
 /* a filled box in the world (full-size pixels), clipped to the screen */
 static void b4_box_world(int wx, int wy, int w, int h, int colour)
 {
-	int sx = (wx >> 1) - cam_x, sy = (wy >> 1) - view_y, sw = w >> 1, sh = h >> 1;
+	int sx = (wx >> 1) - cam_x, sy = (wy >> 1) - cam_y, sw = w >> 1, sh = h >> 1;
 	if (sx < 0) { sw += sx; sx = 0; }
-	if (sy < 0) { sh += sy; sy = 0; }
+	if (sy < HUD_H) { sh -= HUD_H - sy; sy = HUD_H; }
 	if (sx + sw > SCREEN_W) sw = SCREEN_W - sx;
 	if (sy + sh > VIEW_H) sh = VIEW_H - sy;
 	if (sw > 0 && sh > 0) hud_box(sx, sy, sw, sh, colour);
@@ -161,7 +161,7 @@ static void b4_draw_clip(const Pic *p, int frame, int32_t fx_, int32_t fy_, int 
 	int vx0 = view_x, vx1 = view_x + VIEW_W;
 	if (vx0 < x0 >> 1) vx0 = x0 >> 1;
 	if (vx1 > x1 >> 1) vx1 = x1 >> 1;
-	const int vy0 = view_y, vy1 = view_y + VIEW_H;
+	const int vy0 = view_y, vy1 = view_y + PLAY_H;
 	if (vx0 >= vx1 || bx >= vx1 || by >= vy1 || bx + f.w <= vx0 || by + f.h <= vy0) return;
 	const int r0 = by < vy0 ? vy0 - by : 0;
 	const int r1 = by + f.h > vy1 ? vy1 - by : f.h;

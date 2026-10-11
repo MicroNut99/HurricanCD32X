@@ -893,8 +893,8 @@ static int PRESSWURST_draw(const Ent *e, uint32_t t)
 	 * the view's top is moved down to that line while it is drawn - when its bottom is in the
 	 * view (else the whole picture, as when the line is above the view) */
 	const int clip = (e->t2 + 251) >> 1, bottom = (((e->y >> 8) + 357) >> 1) + 1;
-	if (clip >= view_y + VIEW_H) return 1;
-	if (clip > view_y && bottom <= view_y + VIEW_H)
+	if (clip >= view_y + PLAY_H) return 1;
+	if (clip > view_y && bottom <= view_y + PLAY_H)
 	{
 		const int save = view_y;
 		view_y = clip;

@@ -164,3 +164,7 @@ void plat_present_scroll(const uint16_t *palette555, int row0, int xoff, int vie
 	back ^= 1;
 	if (frame >= (uint32_t)atoi(env("HB_FRAMES", "300"))) exit(0);
 }
+
+/* the 32X runs fn(arg, 1) on the slave SH2 while fn(arg, 0) runs on the master; here one after
+ * the other in the same order of effects (part 0 sees the world before part 1's steps) */
+void plat_parallel(void (*fn)(void *, int), void *arg) { fn(arg, 0); fn(arg, 1); }

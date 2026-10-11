@@ -28,7 +28,7 @@ PORT_DEFS := -DOJ32X -DOJ32X_MARS -DOJ_SDL1 -DPORTABLE -DNDEBUG \
              -DOJ_VERSION=\"git-oj32x\" -DOJ_DATE=\"2026-10-06\" -D__32X__ -DMARS \
              -DOJ_URL=\"http://alister.eu/jazz/oj/\" -DOJ_BUGREPORT=\"https://github.com/AlisterT/openjazz/issues\" \
              -DLIBXMP_CORE_PLAYER -DLIBXMP_STATIC -DXMP_SYM_VISIBILITY \
-             -DOJ32X_SCROLL -DOJ32X_FAST_CODE -DOJ32X_PANEL_DIFF -DOJ32X_FLIP_ASYNC $(EXTRA_DEFS)
+             -DOJ32X_SCROLL -DOJ32X_FAST_CODE -DOJ32X_PANEL_DIFF -DOJ32X_FLIP_ASYNC -DOJ32X_SLAVE_DRAWS=1 $(EXTRA_DEFS)
 PORT_INCS := -I$(PORT)/include -I$(PORT)
 PORT_CXXFLAGS := -std=gnu++14 $(PORT_OPT) $(PORT_DEFS) $(PORT_INCS) -fno-threadsafe-statics -Wall -Wno-unused-result -Wno-narrowing -MMD -MP
 PORT_CFLAGS   := -std=gnu11 $(PORT_OPT) $(PORT_DEFS) $(PORT_INCS) -w -MMD -MP
