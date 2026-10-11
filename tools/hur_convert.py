@@ -198,6 +198,11 @@ def frames_of(rgba, t):
         # a picture Hurrican draws turned (RenderSpriteRotated, e.g. the spread shot, which
         # points up at angle 0): 16 frames, frame k turned clockwise by k x 22.5 degrees
         im = Image.fromarray(out[0], "RGBA")
+        side = max(im.width, im.height)               # a long picture (the laser) turns in a square
+        if im.width != im.height:
+            sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+            sq.paste(im, ((side - im.width) // 2, (side - im.height) // 2))
+            im = sq
         out = [np.array(im.rotate(-22.5 * k, resample=Image.BICUBIC)) for k in range(16)]
     return out
 
@@ -574,6 +579,19 @@ def main():
             continue
         fr = [pack_rows(res_mapper.map(f)) for f in res_frames[n]]
         entries.append((n, res_frames[n][0].shape[1], res_frames[n][0].shape[0], fr, res_add[n]))
+    # the credits' font (game/credits.c): menufont.png's letters at 11 lines (the menu font
+    # halved is 14), with hard edges - each pixel white or see-through, no blended edge colours
+    mf = os.path.join(tdir, "menufont.png")
+    if os.path.exists(mf):
+        font, _ = load_rgba(mf)
+        frames = []
+        for k in range(16 * 12):
+            cell = Image.fromarray(font[(k // 16) * 28:(k // 16) * 28 + 28, (k % 16) * 28:(k % 16) * 28 + 28], "RGBA")
+            a = np.array(cell.getchannel("A").resize((11, 11), Image.LANCZOS))
+            solid = np.zeros((11, 11, 4), np.uint8)
+            solid[a >= 100] = (255, 255, 255, 255)
+            frames.append(pack_rows(res_mapper.map(solid)))
+        entries.append(("creditfont.png", 11, 11, frames, False))
     sfile = sprite_file(entries)
     rpal = b"".join(struct.pack(">H", to32x(c)) for c in palette[:1 + len(res_palette)])
     total = write_pack(os.path.join(out_dir, "IMAGE8.RAW"), [("RSPRITES.BIN", sfile), ("PALRES.BIN", rpal)], RESIDENT_MAX)

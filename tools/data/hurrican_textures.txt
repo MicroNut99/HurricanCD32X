@@ -188,9 +188,9 @@ kugel4.png 150 120 5 4 30 30 S1,S2,S6
 lafass.png 444 495 6 3 74 165 S5
 lafass_fall.png 264 332 4 4 66 83 R
 lafass_spawner.png 74 165 1 1 74 165 S5
-laser.png 9 48 1 1 9 48 R
+laser.png 9 48 1 1 9 48 R,ROT16
 laser2.png 160 48 10 1 16 48 R
-laserbig.png 16 80 1 1 16 80 R
+laserbig.png 16 80 1 1 16 80 R,ROT16
 laserbig2.png 280 80 10 1 28 80 R
 laserflame.png 48 48 1 1 48 48 R
 laserfunke.png 9 9 1 1 9 9 R

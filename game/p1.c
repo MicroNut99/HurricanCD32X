@@ -1597,6 +1597,22 @@ static int pad, pad_prev;
 static int demo_dir = 1, demo_jump, demo_rest, demo_stuck, demo_back, demo_t;
 static fx demo_lastx;
 static void demo_reset(void) { demo_dir = 1; demo_jump = demo_rest = demo_stuck = demo_back = demo_t = 0; demo_lastx = pl.x; }
+/* aim up at an enemy above (the demo player, and the recorder's player in game/demorec.c) */
+static void demo_aim(int *p)
+{
+	for (int k = 0; k < ntargets; k++)
+	{
+		const Ent *e = &ents[targets[k]];
+		if (e->type == E_NONE) continue;
+		const int dx = ecx(e) - pcx(), dy = ecy(e) - pcy();
+		if (dy < -60 && dx > -200 && dx < 200)
+		{
+			*p |= PAD_UP;
+			if (dx > -40 && dx < 40) *p &= ~(PAD_LEFT | PAD_RIGHT);
+			break;
+		}
+	}
+}
 static int demo_pad(void)
 {
 	const int d = demo_back > 0 ? -1 : 1;
@@ -1622,21 +1638,85 @@ static int demo_pad(void)
 	if (demo_jump > 0) { p |= PAD_C; demo_jump--; if (!demo_jump) demo_rest = 4; }
 	else if (demo_rest > 0) demo_rest--;
 	else if (ground && (wall || gap || demo_stuck || rnd(240) == 0)) demo_jump = 12 + rnd(24);
-	/* aim up at an enemy above */
-	for (int k = 0; k < ntargets; k++)
-	{
-		const Ent *e = &ents[targets[k]];
-		if (e->type == E_NONE) continue;
-		const int dx = ecx(e) - pcx(), dy = ecy(e) - pcy();
-		if (dy < -60 && dx > -200 && dx < 200)
-		{
-			p |= PAD_UP;
-			if (dx > -40 && dx < 40) p &= ~(PAD_LEFT | PAD_RIGHT);
-			break;
-		}
-	}
+	demo_aim(&p);
 	return p;
 }
+
+/* ------------------------------------------------------------------ the recorded demos
+ * The attract mode (a minute in the main menu without a button) plays one of the recorded
+ * demos, picked at random (game/demo_data.h, made by game/demorec.c along the routes of
+ * recordings of the original game - stages 1 and 2, three each, about a minute): the buttons of every 60 Hz step, run-length coded. A
+ * recorded demo runs the world step by step the same way on the PC and the 32X (the camera and
+ * the entities' wake-up every step, the random numbers from the demo's seed, the drawing leaves
+ * them alone) - the frame rate does not change what happens. Every second the player's place
+ * is checked against the recording: should it ever differ, that demo ends (the next one plays)
+ * rather than showing a player who got lost. */
+#ifndef OJ32X_MARS
+#include <stdio.h>
+#endif
+typedef struct
+{
+	int16_t stage;
+	int16_t x, y;                     /* the start (0, 0: the stage's start) */
+	uint32_t seed;
+	uint32_t steps;
+	const uint16_t *rle;              /* pad, count, pad, count, ... */
+	uint32_t nrle;                    /* uint16 words */
+	const int16_t *chk;               /* x, y (pixels) after every 60 steps */
+	uint32_t nchk;                    /* places */
+} DemoRec;
+#include "demo_data.h"
+#ifndef DEMO_RECS
+#define DEMO_RECS 0
+static const DemoRec demo_recs[1];
+#endif
+static int demo_rec = -1;             /* the recorded demo playing (-1: none) */
+static int pl_off_t;                  /* steps the player has been left off a held screen */
+static uint32_t demo_rec_pos, demo_rec_left, demo_rec_t;
+static int demo_rec_pad_now;
+static int demo_warp, demo_warp_x, demo_warp_y;
+static int demo_rec_pad(void)
+{
+	const DemoRec *d = &demo_recs[demo_rec];
+	while (demo_rec_left == 0 && demo_rec_pos + 1 < d->nrle)
+	{
+		demo_rec_pad_now = d->rle[demo_rec_pos];
+		demo_rec_left = d->rle[demo_rec_pos + 1];
+		demo_rec_pos += 2;
+	}
+	if (demo_rec_left == 0) return 0;
+	demo_rec_left--;
+	return demo_rec_pad_now;
+}
+/* after a step: 1 when the recorded demo is over or has gone off its path */
+static int demo_rec_check(void)
+{
+	const DemoRec *d = &demo_recs[demo_rec];
+	demo_rec_t++;
+	if (demo_rec_t >= d->steps) return 1;
+	if (demo_rec_t % 60 == 0)
+	{
+		const uint32_t k = demo_rec_t / 60 - 1;
+		if (k < d->nchk)
+		{
+#ifndef OJ32X_MARS
+			if (getenv("HB_DEMOTRACE")) fprintf(stderr, "DEMO %d step %u: %d,%d recorded %d,%d\n", demo_rec, demo_rec_t,
+			                                    (int)(pl.x >> 8), (int)(pl.y >> 8), d->chk[2 * k], d->chk[2 * k + 1]);
+#endif
+			const int dx = (pl.x >> 8) - d->chk[2 * k], dy = (pl.y >> 8) - d->chk[2 * k + 1];
+			if (dx > 64 || dx < -64 || dy > 64 || dy < -64)
+			{
+#ifndef OJ32X_MARS
+				fprintf(stderr, "DEMO %d off its path at step %u: %d,%d (recorded %d,%d)\n", demo_rec, demo_rec_t,
+				        (int)(pl.x >> 8), (int)(pl.y >> 8), d->chk[2 * k], d->chk[2 * k + 1]);
+#endif
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
 
 #ifndef OJ32X_MARS
 #include <stdio.h>
@@ -1768,6 +1848,9 @@ static void player_shoot(void)
 		const int dmg = big ? (lvl >= 7 ? 16 : 12) : (lvl >= 2 ? 10 : 8);
 		const int n = lvl >= 7 ? 3 : lvl >= 3 ? 2 : 1;   /* more parallel beams by level */
 		const int perpx = -sin_d(ang), perpy = cos_d(ang);   /* unit normal (8.8) */
+		/* the middle beam's centre on the barrel's line: where the (big) spread shot's middle is
+		 * (the spread shot's place is its picture's corner, aligned with the barrel in P1f) */
+		const int cx = mx - 2 + P_spreadbig.fw, cy = my - 2 + P_spreadbig.fh;
 		for (int i = 0; i < n; i++)
 		{
 			const int o = i - n / 2;
@@ -1775,13 +1858,15 @@ static void player_shoot(void)
 			if (!s) break;
 			s->kind = SH_PLASER;
 			s->pic = p;
-			s->x = pl.x + FX(mx) + perpx * 12 * o - FX(p->fw);
-			s->y = pl.y + FX(my) + perpy * 12 * o - FX(p->fh);
+			s->x = pl.x + FX(cx) + perpx * 12 * o - FX(p->fw);
+			s->y = pl.y + FX(cy) + perpy * 12 * o - FX(p->fh);
 			s->xs = cos_d(ang) * 60;
 			s->ys = sin_d(ang) * 60;
 			s->dmg = (int16_t)dmg;
 			s->life = 60 * 2;
 			s->box = pic_box(p);
+			/* the bolt points up; the pack holds it turned in 16 steps (tools: ROT16, a square) */
+			s->rot = (uint8_t)((((ang + 90) % 360 + 360) % 360 * 16 + 180) / 360 % 16);
 		}
 	}
 	else                                      /* ----- bounce (BOUNCESHOT1) */
@@ -2238,12 +2323,11 @@ static void player_step(void)
 	 * Hurrican's CheckLevelExit - he dies and comes back on the lift. Here after 1.5 s off the
 	 * screen (a high jump at the top of the shaft leaves it for a moment and comes back) */
 	{
-		static int off_t;
 		const int px = pl.x >> 8, py = pl.y >> 8, sx = cam_x * 2, sy = cam_y * 2;
 		const int off = cam_lock_held && pl.state != PS_DEAD &&
 			(px + player_box.r < sx || px + player_box.l > sx + 640 || py + player_box.b < sy || py + player_box.t > sy + 400);
-		off_t = off ? off_t + 1 : 0;
-		if (off_t > 90) { off_t = 0; player_damage(FX(1000)); }
+		pl_off_t = off ? pl_off_t + 1 : 0;
+		if (pl_off_t > 90) { pl_off_t = 0; player_damage(FX(1000)); }
 	}
 
 	/* shooting */
@@ -2572,6 +2656,9 @@ static void stage_start(void)
 		if (sscanf(getenv("HB_WARP"), "%d,%d", &wx, &wy) == 2) { start_x = FX(wx); start_y = FX(wy); }
 	}
 #endif
+	if (demo_warp) { start_x = FX(demo_warp_x); start_y = FX(demo_warp_y); }
+	/* what a stage starts from (a recorded demo needs the same world every time) */
+	enemy_load = 0; cam_lock = cam_lock_held = 0; pl_off_t = 0; secret_t = 0;
 	player_spawn(start_x, start_y);
 	pl.dir = 1;
 	pl.safe_x = start_x;
@@ -2692,7 +2779,7 @@ static void draw_world(uint32_t t)
 		case SH_LASER: p = &P_laser; mirror = s->xs > 0; break;
 		case SH_PFLANZE: p = &P_pflshot; f = (int)(t / 2 % 4); break;
 		case SH_CANON: p = &P_canon; break;
-		case SH_PLASER: p = s->pic; mirror = s->xs > 0; break;
+		case SH_PLASER: p = s->pic; f = p->count ? s->rot % p->count : 0; break;
 		case SH_BOUNCE: p = s->pic; break;
 		case SH_GRENADE: p = &P_grenade; break;
 		case SH_BEAM: p = s->pic; f = p->count ? (int)(t / 2 % (uint32_t)p->count) : 0; mirror = s->xs > 0; break;
@@ -2870,13 +2957,16 @@ static void menu_draw(uint32_t frame)
 	{
 		Frame f;
 		frame_of(&logo, 0, &f);
-		draw_frame(&f, logo.fw, (SCREEN_W - logo.fw) / 2, 22, 0, 0);
+		/* its visible part centred (the frame's trimmed box), like the words under it */
+		draw_frame(&f, logo.fw, SCREEN_W / 2 - f.x0 - f.w / 2, 22, 0, 0);
 	}
 	char t[40], *q;
 	if (menu_page == 0)
 	{
-		hud_text(SCREEN_W / 2 - 44, 100, menu_sel == 0 ? "> START GAME" : "  START GAME", menu_sel == 0 ? col_yellow : col_light);
-		hud_text(SCREEN_W / 2 - 44, 118, menu_sel == 1 ? "> OPTIONS" : "  OPTIONS", menu_sel == 1 ? col_yellow : col_light);
+		/* the words centred under the logo, the cursor in front of them */
+		hud_text(SCREEN_W / 2 - 40, 100, "START GAME", menu_sel == 0 ? col_yellow : col_light);
+		hud_text(SCREEN_W / 2 - 28, 118, "OPTIONS", menu_sel == 1 ? col_yellow : col_light);
+		hud_text(menu_sel == 0 ? SCREEN_W / 2 - 56 : SCREEN_W / 2 - 44, menu_sel == 0 ? 100 : 118, ">", col_yellow);
 	}
 	else if (menu_page == 2)
 	{
@@ -2913,10 +3003,10 @@ static void menu_draw(uint32_t frame)
 		hud_text(SCREEN_W / 2 - 104, 120, t, menu_sel == 2 ? col_yellow : col_light);
 		hud_text(SCREEN_W / 2 - 104, 131, menu_sel == 3 ? "> CONTROLS" : "  CONTROLS", menu_sel == 3 ? col_yellow : col_light);
 		hud_text(SCREEN_W / 2 - 104, 142, menu_sel == 4 ? "> STORY" : "  STORY", menu_sel == 4 ? col_yellow : col_light);
-		hud_text(SCREEN_W / 2 - 104, 153, menu_sel == 5 ? "> DEMO        (THE LEVEL ABOVE)" : "  DEMO        (THE LEVEL ABOVE)", menu_sel == 5 ? col_yellow : col_light);
+		hud_text(SCREEN_W / 2 - 104, 153, menu_sel == 5 ? "> DEMO        (ALL LEVELS)" : "  DEMO        (ALL LEVELS)", menu_sel == 5 ? col_yellow : col_light);
 		hud_text(SCREEN_W / 2 - 104, 164, menu_sel == 6 ? "> CREDITS     (AND MUSIC)" : "  CREDITS     (AND MUSIC)", menu_sel == 6 ? col_yellow : col_light);
 		hud_text(SCREEN_W / 2 - 104, 175, menu_sel == 7 ? "> BACK" : "  BACK", menu_sel == 7 ? col_yellow : col_light);
-		hud_text(SCREEN_W / 2 - 136, 189, "LEFT/RIGHT CHANGE   HOLD: FASTER", col_grey);
+		hud_text(SCREEN_W / 2 - 68, 189, "LEFT/RIGHT CHANGE", col_grey);
 	}
 	(void)frame;
 }
@@ -2986,6 +3076,29 @@ static void stage_go(int n)
 	music(TRACK_STAGE(n));
 }
 
+/* a recorded demo from its start: the same world every time (see "the recorded demos") */
+static void demo_rec_start(int k)
+{
+	const DemoRec *d = &demo_recs[k];
+	memset(&pl, 0, sizeof pl);
+	pl.lives = 99;
+	demo = 1; demo_rec = k;
+	demo_rec_pos = demo_rec_left = demo_rec_t = 0; demo_rec_pad_now = 0;
+	demo_warp = d->x || d->y; demo_warp_x = d->x; demo_warp_y = d->y;
+	rng_state = d->seed;
+	stage_go(d->stage);
+	demo_warp = 0;
+}
+
+/* a demo of the stage-playing robot (OPTIONS - DEMO: every stage in turn) */
+static void demo_bot_start(int n)
+{
+	demo = 1; demo_rec = -1;
+	pl.lives = 99; pl.score = 0; pl.gems = 0;
+	stage_go(n);
+	demo_reset();
+}
+
 #include "credits.c"
 #include "story.c"
 
@@ -2996,7 +3109,7 @@ int main(int argc, char *argv[])
 	load_resident();
 	music(TRACK_MENU);
 
-	int gs = GS_MENU, gs_t = 0, attract = 0;
+	int gs = GS_MENU, gs_t = 0, attract = 0, demo_next = 0, demo_first = 1;
 	uint32_t idle_ms = 0;
 	uint32_t last_ms = plat_ticks_ms(), acc = 0, frame = 0;
 	/* the timing line (pause menu: TIMING ON / OFF): milliseconds per frame, averaged over 16 frames */
@@ -3018,12 +3131,33 @@ int main(int argc, char *argv[])
 
 		pad = plat_read_pad();
 		const int pad_real = pad;               /* the demo replaces pad in its steps */
-		const int hit = pad & ~pad_prev;
+		int hit = pad & ~pad_prev;
 		uint32_t t0 = plat_prof_us(), t1;
-		if (demo && gs != GS_MENU && (hit || (gs == GS_PLAY && demo_t > 60 * 120)))
+		if (demo && gs != GS_MENU && !hit && (demo_next || (demo_rec < 0 && gs == GS_PLAY && demo_t > 60 * 120)))
+		{
+			/* this demo is over: the next one (the recorded ones in turn; OPTIONS - DEMO: the
+			 * stages in turn), after the last back to the menu */
+			demo_next = 0;
+			int more = 0;
+			if (demo_rec >= 0) { }               /* one recorded demo, then the title */
+			else
+			{
+				const int n = stage % NSTAGES + 1;
+				if (n != demo_first) { demo_bot_start(n); more = 1; }
+			}
+			if (more)
+			{
+				gs = GS_INTRO; gs_t = 0;
+				pad_prev = pad;
+				last_ms = plat_ticks_ms(); acc = 0;
+				continue;
+			}
+			hit = PAD_START;                    /* the end: as a button */
+		}
+		if (demo && gs != GS_MENU && hit)
 		{
 			/* the demo ends: back to the options menu (the attract mode: the main menu) */
-			demo = 0;
+			demo = 0; demo_rec = -1; demo_next = 0;
 			gs = GS_MENU;
 			if (attract) { menu_page = 0; menu_sel = 0; attract = 0; }
 			else { menu_page = 1; menu_sel = 5; }
@@ -3106,14 +3240,33 @@ int main(int argc, char *argv[])
 			 * the demo (back to the main menu afterwards) */
 			idle_ms = pad ? 0 : idle_ms + dms;
 			attract = 0;
+#ifndef OJ32X_MARS
+			if (getenv("HB_ATTRACT")) idle_ms = 60000u;   /* PC check: HB_ATTRACT=1 - the attract mode at once */
+#endif
 			if (!go && idle_ms >= 60000u) { go = 2; attract = 1; }
 			if (go)
 			{
 				idle_ms = 0;
-				demo = go == 2;
-				pl.lives = demo ? 99 : opt_lives; pl.score = 0; pl.gems = 0;
-				stage_go(attract ? 1 + rnd(NSTAGES) : opt_stage);
-				if (demo) demo_reset();
+				demo_next = 0;
+				if (attract && DEMO_RECS > 0)
+				{
+					/* a recorded demo at random, not the one shown last */
+					static int last = -1;
+					int k = rnd(DEMO_RECS ? DEMO_RECS : 1);
+					if (k == last && DEMO_RECS > 1) k = (k + 1 + rnd(DEMO_RECS - 1)) % (DEMO_RECS ? DEMO_RECS : 1);
+#ifndef OJ32X_MARS
+					if (getenv("HB_DEMO_N")) k = (int)strtol(getenv("HB_DEMO_N"), 0, 10) % (DEMO_RECS ? DEMO_RECS : 1);   /* PC check: that demo */
+#endif
+					last = k;
+					demo_rec_start(k);
+				}
+				else if (go == 2) { demo_first = attract ? 1 + rnd(NSTAGES) : opt_stage; demo_bot_start(demo_first); }
+				else
+				{
+					demo = 0; demo_rec = -1;
+					pl.lives = opt_lives; pl.score = 0; pl.gems = 0;
+					stage_go(opt_stage);
+				}
 				gs = GS_INTRO; gs_t = 0;
 				pad_prev = pad;
 				last_ms = plat_ticks_ms(); acc = 0;
@@ -3140,11 +3293,19 @@ int main(int argc, char *argv[])
 			switch (gs)
 			{
 			case GS_INTRO:
+				if (demo_rec >= 0) { camera_follow(0); world_activate(); }   /* step by step (see the recorded demos) */
 				if (gs_t > 120 || (hit & (PAD_B | PAD_C | PAD_A))) { gs = GS_PLAY; gs_t = 0; }
 				break;
 			case GS_PLAY:
-				if (demo) pad = demo_pad();
+				if (demo_rec >= 0) pad = demo_rec_pad();
+				else if (demo) pad = demo_pad();
 				world_step();
+				if (demo_rec >= 0)
+				{
+					camera_follow(0);
+					world_activate();
+					if (demo_rec_check()) { demo_next = 1; s = steps; break; }
+				}
 				if (pl.state == PS_DEAD && pl.dead_t > 90)
 				{
 					pl.lives--;
@@ -3157,7 +3318,7 @@ int main(int argc, char *argv[])
 						pl.safe_t = 150;          /* 2.5 s without damage */
 					}
 				}
-				if (stage_clear_t && demo) { demo_t = 60 * 121; break; }   /* the demo ends with the stage */
+				if (stage_clear_t && demo) { demo_next = 1; s = steps; break; }   /* the demo ends with the stage */
 				if (stage_clear_t) { gs = GS_CLEAR; gs_t = 0; music(TRACK_CLEAR | TRACK_ONCE); sfx(SFX_SECRET); }
 				break;
 			case GS_PAUSE:
@@ -3190,8 +3351,11 @@ int main(int argc, char *argv[])
 		tms += dms;
 
 		if (gs == GS_MENU) continue;           /* the game ended: the menu from the next frame */
-		if (gs == GS_PLAY || gs == GS_INTRO) camera_follow(0);
-		world_activate();
+		if (demo_rec < 0)                      /* (a recorded demo: in its steps) */
+		{
+			if (gs == GS_PLAY || gs == GS_INTRO) camera_follow(0);
+			world_activate();
+		}
 
 		/* ---- draw */
 		t1 = plat_prof_us(); tacc[T_LOGIC] += t1 - t0;
@@ -3228,6 +3392,7 @@ int main(int argc, char *argv[])
 
 		/* sprites, then the walls over them */
 		over_list_n = 0;
+		const uint32_t rng_keep = rng_state;    /* the drawing leaves the random numbers alone */
 		draw_world(frame);
 		t1 = plat_prof_us(); tacc[T_SPR] += t1 - t0; t0 = t1;
 		for (int i = 0; i < over_list_n; i++) over_rect(over_list[i].x0, over_list[i].y0, over_list[i].x1, over_list[i].y1);
@@ -3235,6 +3400,7 @@ int main(int argc, char *argv[])
 
 		/* HUD and messages */
 		draw_hud(frame);
+		rng_state = rng_keep;
 		if (gs == GS_INTRO)
 		{
 			char t[12];

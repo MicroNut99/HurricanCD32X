@@ -203,3 +203,25 @@ Disc: `sega/HurricanP1c/HurricanP1c.cue`.
   tools/splash_bar_colours.py (palette 253-255 of IMAGE.RAW). Levels-only would need the
   boot-path platform code (IMAGE.RAW is read by both).
 - Disc: `sega/HurricanP1k/HurricanP1k.cue`.
+
+## P1l
+- Attract mode (60 s idle on the title): one recorded demo at random, never the same twice in a
+  row (game/demo_data.h - stage 1: three, stage 2: three). OPTIONS - DEMO: the demo robot plays the
+  stages in turn from LEVEL. A recorded demo: DemoRec {stage, start x/y, seed, steps, run-length
+  pads, a checked place every 60 steps}; p1.c runs camera_follow + world_activate per step while
+  one plays, saves/restores rng_state around the drawing, resets enemy_load / camera locks /
+  pl_off_t in stage_start, memsets pl at the start. Off its path (> 64 px) -> the demo ends.
+- game/demorec.c (make -C host demorec): HB_MAPIMG (map picture), HB_BLK / HB_ENTS (tiles and
+  objects of an area), HB_PATH (path search, prints a route of moves), HB_ROUTE (records: moves
+  tried in a fork()ed copy; way points by a look-ahead search over 8 button patterns, 3 deep,
+  potential = distance along the rest of the route), w:n pauses, HB_PLAY (replay, places per
+  second). tools/make_demo_data.py -> game/demo_data.h.
+- Laser: rotated frames (ROT16, non-square pictures padded to a square), the middle beam on the
+  barrel line (the big spread shot's centre).
+- Story: the picture change done per step (the per-frame fade never reached 0 on the console).
+- Credits: 12 px/s, creditfont.png (menu font 11x11, hard edges), no band, Y hides all but the
+  track line.
+- Menu: START GAME / OPTIONS centred under the logo; "HOLD: FASTER" removed.
+- Loading screen: the spiral in the middle, the frame at (9,9,9) so the edges cut cleanly.
+- Disc: `sega/HurricanP1l/HurricanP1l.cue`.
+

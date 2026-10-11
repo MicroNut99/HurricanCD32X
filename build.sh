@@ -65,7 +65,7 @@ cmp -s "$HERE/cd32x/subcpu/cd/OPENLARA.32X" "$ROMS/OPENLARA.32X" || { echo "*** 
 echo "==> disc checked: loader + program + splash + packs + sound effects"
 
 # the mixed-mode image: data track + audio tracks 2-13 (as the J19b build with music)
-cd "$HERE/cd32x/subcpu" && python3 make_mixed_cd2.py CDROMPlayer.iso "$MUS"/Track*.wav --out HurricanP1k
+cd "$HERE/cd32x/subcpu" && python3 make_mixed_cd2.py CDROMPlayer.iso "$MUS"/Track*.wav --out HurricanP1l
 echo
 echo "==> done:"
-echo "    disc: cd32x/subcpu/HurricanP1k.cue (with its .bin)"
+echo "    disc: cd32x/subcpu/HurricanP1l.cue (with its .bin)"

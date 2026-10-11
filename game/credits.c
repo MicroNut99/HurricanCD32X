@@ -11,7 +11,8 @@
  * The credits scroll up over it in Hurrican's own menu font (menufont.png, halved), with a
  * shadow. The player line at the bottom (the small font on a dark band).
  *
- * Buttons: Left / Right choose a track, A plays it, B stops it, C the next plasma, Up / Down
+ * Buttons: Left / Right choose a track, A plays it, B stops it, C the next plasma, Y hides all
+ * the text but the track's number and name (and shows it again), Up / Down
  * the plasma faster / slower (nothing is shown for it - Sonic 1+1's "SPEED" line is left out),
  * START back to OPTIONS.
  * No pause: the Sub-CPU program (boot path, unchanged) has play (CMD 45) and stop (CMD 54) only.
@@ -27,7 +28,8 @@
 #define CR_LAST_TRACK  24
 #define CR_PATTERNS    19            /* 0 = OpenJazz's own, 1-18 Sonic 1+1's */
 #define CR_PAL         160           /* the plasma's palette entries 160-223 */
-#define CR_TEXT_BOTTOM 160           /* the credits scroll above the player band */
+#define CR_TEXT_BOTTOM 160           /* the credits scroll above the player's lines */
+#define CR_LINE_H      13            /* the credits' line height (the 11-line font + 2) */
 
 static const char *const cr_track_title[CR_LAST_TRACK + 1] = {
 	0, 0,
@@ -222,6 +224,7 @@ static void cr_tick(int frames)
 
 /* ------------------------------------------------------------------ the credits text */
 static Pic cr_font;
+static int cr_hide;                     /* Y: the text hidden but the track's number and name */
 static int cr_scroll;                    /* 8.8: how far the text has scrolled up */
 static int cr_text_h;
 /* one line of the menu font, centred, at screen row y (clipped to the text area); shadow then letters */
@@ -280,10 +283,12 @@ static void credits_enter(void)
 {
 	static int made;
 	if (!made) { cr_tables(); made = 1; }
-	cr_font = pic("menufont.png");
+	cr_font = pic("creditfont.png");          /* the menu font at 11 lines, hard edges (tools/hur_convert.py) */
+	if (!cr_font.count) cr_font = pic("menufont.png");
+	cr_hide = 0;
 	cr_scroll = 0;
 	cr_text_h = 0;
-	for (int i = 0; cr_lines[i]; i++) cr_text_h += 16;
+	for (int i = 0; cr_lines[i]; i++) cr_text_h += CR_LINE_H;
 	cr_pat = 0;
 	cr_drawn_pat = -1;
 	cr_track = TRACK_CREDITS;
@@ -302,6 +307,7 @@ static int credits_input(int hit)
 	if (hit & PAD_A) { plat_music(cr_track); cr_playing = cr_track; }
 	if (hit & PAD_B) { plat_music(0); cr_playing = 0; }
 	if (hit & PAD_C) cr_pat = (cr_pat + 1) % CR_PATTERNS;
+	if (hit & PAD_Y) cr_hide ^= 1;               /* Y: only the track's number and name */
 	if ((hit & PAD_UP) && cr_speed < 16) cr_speed++;
 	if ((hit & PAD_DOWN) && cr_speed > 1) cr_speed--;
 	return 0;
@@ -318,13 +324,14 @@ static void credits_draw(int frames)
 		cr_copy_pattern();
 	}
 	/* the credits: scroll up from the band, over and over */
-	cr_scroll += frames * 128;                   /* half a pixel a frame */
+	cr_scroll += frames * 51;                    /* 12 pixels a second (0.2 a 60 Hz step) */
 	const int top = CR_TEXT_BOTTOM - (cr_scroll >> 8);
 	if (top + cr_text_h < -16) cr_scroll = 0;
-	for (int i = 0, y = top; cr_lines[i]; i++, y += 16)
-		if (y > -16 && y < CR_TEXT_BOTTOM && cr_lines[i][0]) cr_line(cr_lines[i], y);
+	if (!cr_hide)
+		for (int i = 0, y = top; cr_lines[i]; i++, y += CR_LINE_H)
+			if (y > -CR_LINE_H && y < CR_TEXT_BOTTOM && cr_lines[i][0]) cr_line(cr_lines[i], y);
 	/* the player band */
-	hud_box(0, CR_TEXT_BOTTOM + 2, SCREEN_W, VIEW_H - CR_TEXT_BOTTOM - 2, col_dark);
+	/* the player's lines straight over the plasma (shadowed text, no band) */
 	char t[48], *q;
 	q = put_str(t, "< ");
 	q = put_dec(q, (uint32_t)cr_track, 2);
@@ -336,6 +343,7 @@ static void credits_draw(int frames)
 	if (cr_playing == cr_track) put_str(q, "PLAYING");
 	else if (cr_playing) { q = put_str(q, "TRACK "); q = put_dec(q, (uint32_t)cr_playing, 2); put_str(q, " PLAYING"); }
 	else put_str(q, "STOPPED");
+	if (cr_hide) return;
 	hud_text(6, CR_TEXT_BOTTOM + 16, t, col_light);
-	hud_text(6, CR_TEXT_BOTTOM + 27, "A PLAY  B STOP  C PLASMA  START BACK", col_grey);
+	hud_text(6, CR_TEXT_BOTTOM + 27, "A:PLAY B:STOP C:FX Y:TEXT START:BACK", col_light);
 }

@@ -9,7 +9,7 @@ be recompiled (its game logic is floating point; the SH2 has no FPU), and that a
 could reach Jazz-like frame rates *if* the 32X can draw Hurrican's scenes fast enough. B1 measured
 it on the console; P1 is the first playable build.
 
-## P1k: all stages, all weapons, the bosses
+## P1l: all stages, all weapons, the bosses, recorded attract demos
 
 The game starts at a menu:
 
@@ -26,12 +26,15 @@ The game starts at a menu:
     song titles from the modules). Left / Right choose a track, A plays, B stops, C the next
     plasma, Up / Down the plasma's speed, Start back. No pause: the unchanged Sub-CPU program
     has play and stop only.
-  - **DEMO**: the stage chosen under LEVEL plays by itself (the demo player takes no damage);
-    any button, the stage's end or 2 minutes return to the menu.
+  - **DEMO**: the stages play by themselves, one after the other from the one chosen under
+    LEVEL (the demo robot; it takes no damage); each runs to its end or 2 minutes; any button
+    returns to the menu.
   - **BACK**.
 
 Up / Down choose, Left / Right change, B, C, A or Start select. A minute in the menus without a
-button starts the attract mode: a random stage plays by itself (any button returns). After a stage is cleared the
+button starts the attract mode: one of the recorded demos, picked at random (three of stage 1,
+three of stage 2, each about a minute, made along the routes of recordings of the original game);
+any button returns. The recorded demos are not in the menu. After a stage is cleared the
 next one loads; after game over (or the last stage) the menu returns. Every life starts with all
 weapons at their top level and Hurrican's stock of grenades, power lines and smart bombs.
 Playing the stage loaded
@@ -168,8 +171,18 @@ Needs:
     HURRICAN_DATA=<Hurrican's data folder> ./build.sh 2>&1 | tee build_log.txt
 
 or `tools/make_disc.sh`, which also takes the data from `Hurrican-master.zip` next to this folder
-and copies the disc to `sega/HurricanP1k/`. The disc: `cd32x/subcpu/HurricanP1k.cue` / `.bin`
+and copies the disc to `sega/HurricanP1l/`. The disc: `cd32x/subcpu/HurricanP1l.cue` / `.bin`
 (data track + 23 audio tracks).
+
+The recorded demos (`game/demo_data.h`): the buttons of every 60 Hz step. In a demo the world is
+run step by step (the camera and the enemies' wake-up each step, the random numbers from the
+demo's seed, the drawing leaves them alone), so the replay is the same at any frame rate and on
+the PC and the 32X; once a second the player's place is checked against the recording and a demo
+that ever went off its path just ends. They are made on the PC by `game/demorec.c`
+(`make -C host demorec`): `HB_PATH` finds a way through a stage with the game's own movement code,
+`HB_ROUTE` then plays it with enemies (looking ahead in fork()ed copies of the game where a found
+move fails), and `tools/make_demo_data.py` writes the header. Made with the stage packs of the
+Hurrican data in `Hurrican-master.zip`; other data would need the demos made again.
 
 PC checks of the same game code (`game/host.c` stands in for the 32X):
 - `make -C host`: the game on the PC, frames saved as pictures (see `host/Makefile`);

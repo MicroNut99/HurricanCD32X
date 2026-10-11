@@ -27,3 +27,6 @@ clean:
 reach: ../game/reach.c ../game/p1.c ../game/host.c ../port/pack.c
 	$(CC) $(CFLAGS) -o hurrican_p1_reach ../game/reach.c ../game/host.c ../port/pack.c
 .PHONY: reach
+demorec: ../game/demorec.c ../game/p1.c ../game/host.c ../port/pack.c $(DEPS)
+	$(CC) $(CFLAGS) -o hurrican_demorec ../game/demorec.c ../game/host.c ../port/pack.c
+.PHONY: demorec

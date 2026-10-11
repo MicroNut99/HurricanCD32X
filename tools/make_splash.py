@@ -22,9 +22,9 @@ tex = os.path.join(data, "textures")
 CX, BAR_Y0, BAR_Y1 = 146, 174, 186
 
 img = Image.new("RGBA", (320, 200), (0, 0, 0, 255))
-# the star field with the spiral, its middle behind the bar's middle
+# the star field with the spiral, its middle in the middle of the screen (it covers it all)
 rund = Image.open(os.path.join(tex, "hurrican_rund.png")).convert("RGBA").resize((360, 360), Image.LANCZOS)
-img.alpha_composite(rund, (CX - 180, (BAR_Y0 + BAR_Y1) // 2 - 180 - 30))
+img.alpha_composite(rund, (CX - 180, 100 - 180))
 
 # the logo on top, its visible part centred
 logo = Image.open(os.path.join(tex, "hurrican-logo.png")).convert("RGBA")
@@ -60,11 +60,12 @@ for g in glyphs:
     img.alpha_composite(g, (x, BAR_Y0 - 22))
     x += g.width + 2
 
-# a thin frame so make_boot_image.py keeps the whole 320x200 (it cuts away black borders)
+# make_boot_image.py cuts away black borders (values <= 8): a frame just above that (9, 9, 9 -
+# black on the screen) keeps the whole 320x200 in place without a visible line
 out_img = img.convert("RGB")
 for i in range(320):
-    out_img.putpixel((i, 0), (24, 24, 40)); out_img.putpixel((i, 199), (24, 24, 40))
+    out_img.putpixel((i, 0), (9, 9, 9)); out_img.putpixel((i, 199), (9, 9, 9))
 for j in range(200):
-    out_img.putpixel((0, j), (24, 24, 40)); out_img.putpixel((319, j), (24, 24, 40))
+    out_img.putpixel((0, j), (9, 9, 9)); out_img.putpixel((319, j), (9, 9, 9))
 os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
 out_img.save(out)

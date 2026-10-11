@@ -70,7 +70,17 @@ static int story_step(void)
 		if (story_fade > 0) story_fade -= 2;
 		return story_fade <= 0;
 	}
-	if (story_fade < 32) story_fade++;
+	/* the picture for the shown lines: fade the old one out, swap, fade the new one in (all per
+	   step - the console draws one frame every four steps, so a per-frame fade never got there) */
+	int a = (story_off - 1) / 4;
+	if (a < 0) a = 0;
+	if (a > 5) a = 5;
+	if (a != story_shown)
+	{
+		story_fade -= 2;
+		if (story_fade <= 0) { story_fade = 0; story_shown = a; }
+	}
+	else if (story_fade < 32) story_fade++;
 	story_count += 17;                               /* Timer.sync(25.5) x 4 a step */
 	story_horiz += 17;
 	if (story_count > 1300 * 4)
@@ -85,11 +95,6 @@ static int story_step(void)
 static void story_draw(void)
 {
 	cam_x = cam_y = view_x = view_y = 0;
-	int a = (story_off - 1) / 4;
-	if (a < 0) a = 0;
-	if (a > 5) a = 5;
-	if (a != story_shown && story_fade > 0 && !story_end) { story_fade -= 4; if (story_fade < 0) story_fade = 0; }
-	if (story_fade == 0 && !story_end) story_shown = a;
 	const uint8_t *pic = story_pic[story_shown], *pal = story_pal[story_shown];
 	/* the colours, faded */
 	if (pal)
