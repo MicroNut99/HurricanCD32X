@@ -282,7 +282,7 @@ static int GEGNERSTURM_step(Ent *e, int idx, int x, int y, int bl, int br, int b
 		{
 			const int sx = V1 + (rnd(2) ? 620 : -40);
 			e->t1 = (int16_t)(5 + e->energy / 150);
-			if (rnd(2) == 0) b4_storm_add(b4_spawn(E_FLEDERMAUS, sx, V2 + 50 + rnd(200), 0, 1));
+			if (rnd(2) == 0) { if (bats_awake() < MAX_BATS) b4_storm_add(b4_spawn(E_FLEDERMAUS, sx, V2 + 50 + rnd(200), 0, 1)); }
 			else b4_storm_add(b4_spawn(E_SCHLEIMBOLLER, sx, V2 + 200 + rnd(50), 24, 0));
 			e->energy -= 10;
 			if (e->energy % 1000 == 0)

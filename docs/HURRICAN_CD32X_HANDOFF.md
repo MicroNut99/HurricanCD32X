@@ -224,4 +224,8 @@ Disc: `sega/HurricanP1c/HurricanP1c.cue`.
 - Menu: START GAME / OPTIONS centred under the logo; "HOLD: FASTER" removed.
 - Loading screen: the spiral in the middle, the frame at (9,9,9) so the edges cut cleanly.
 - Disc: `sega/HurricanP1l/HurricanP1l.cue`.
+- P1l update: the title and menus on black (palette 0 = 0x0400); OPTIONS has no DEMO entry any
+  more (the recorded demos are the attract mode only; the demo robot stays for PC checks,
+  HB_DEMO=1); bats: at most MAX_BATS (5) awake near the screen (world_activate waits the others),
+  the last boss's bat storm adds one only while fewer than 5 are awake.
 

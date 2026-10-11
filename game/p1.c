@@ -1204,6 +1204,14 @@ static void aim_at(int fromx, int fromy, int v, fx *xs, fx *ys)
 }
 
 /* the added kinds' code */
+/* the bats awake at once: never more than MAX_BATS (the user's request) */
+#define MAX_BATS 5
+static __attribute__((unused)) int bats_awake(void)
+{
+	int n = 0;
+	for (int i = 0; i < nents; i++) n += ents[i].type == E_FLEDERMAUS && ents[i].active;
+	return n;
+}
 #include K2_CODE
 static void k2_load(void)
 {
@@ -1590,8 +1598,9 @@ static void ent_step(Ent *e, int idx)
 static int pad, pad_prev;
 
 /* ------------------------------------------------------------------ the demo
- * Options menu: DEMO plays the stage chosen under LEVEL by itself (no damage) until a button
- * is pressed, the stage ends or 2 minutes have passed. The demo player: walks on, keeps the
+ * The demo robot (PC checks: HB_DEMO=1 with HB_STAGE; the attract mode's fallback when no
+ * recorded demos are built in): plays the stage by itself (no damage) until a button is
+ * pressed, the stage ends or 2 minutes have passed. The demo player: walks on, keeps the
  * fire button held, aims up at an enemy above him, jumps at walls, gaps and what blocks him,
  * and turns back for a while when he gets nowhere. */
 static int demo_dir = 1, demo_jump, demo_rest, demo_stuck, demo_back, demo_t;
@@ -2493,6 +2502,14 @@ static void world_activate(void)
 	 * the screen are shot, the next ones come in; a big one counts twice */
 	int budget = (cam_lock_held ? LIFT_BUDGET : ENEMY_BUDGET) - enemy_load;
 	int load = 0;
+	/* the bats already about (a swarm is never more than MAX_BATS) */
+	int bats_near = 0;
+	for (int i = 0; i < nents; i++)
+		if (ents[i].type == E_FLEDERMAUS && ents[i].active)
+		{
+			const int x = ents[i].x >> 8, y = ents[i].y >> 8;
+			if (x > sx0 - 640 && x < sx1 + 640 && y > sy0 - 480 && y < sy1 + 480) bats_near++;
+		}
 	for (int i = 0; i < nents; i++)
 	{
 		Ent *e = &ents[i];
@@ -2505,6 +2522,8 @@ static void world_activate(void)
 			{
 				const int w = enemy_weight(e->type);
 				if (w && w > budget) continue;          /* waits for room */
+				if (e->type == E_FLEDERMAUS && bats_near >= MAX_BATS) continue;   /* at most 5 bats at once */
+				if (e->type == E_FLEDERMAUS) bats_near++;
 				budget -= w;
 				e->active = 1;
 				e->dir = pcx() > ecx(e);
@@ -2889,7 +2908,7 @@ static void load_resident(void)
 	uint32_t size;
 	if (pack_file("PALRES.BIN", &d, &size))
 		for (uint32_t i = 0; i < size / 2 && i < 256; i++) palette[i] = rd16(d + 2 * i);
-	palette[0] = 0x2000;                           /* a dark blue backdrop for the menu */
+	palette[0] = 0x0400;                           /* black behind the title and the menus (0x0000 would be see-through) */
 	col_dark = find_colour(1, 1, 2);
 	col_light = find_colour(31, 31, 31);
 	col_red = find_colour(28, 3, 2);
@@ -3003,9 +3022,8 @@ static void menu_draw(uint32_t frame)
 		hud_text(SCREEN_W / 2 - 104, 120, t, menu_sel == 2 ? col_yellow : col_light);
 		hud_text(SCREEN_W / 2 - 104, 131, menu_sel == 3 ? "> CONTROLS" : "  CONTROLS", menu_sel == 3 ? col_yellow : col_light);
 		hud_text(SCREEN_W / 2 - 104, 142, menu_sel == 4 ? "> STORY" : "  STORY", menu_sel == 4 ? col_yellow : col_light);
-		hud_text(SCREEN_W / 2 - 104, 153, menu_sel == 5 ? "> DEMO        (ALL LEVELS)" : "  DEMO        (ALL LEVELS)", menu_sel == 5 ? col_yellow : col_light);
-		hud_text(SCREEN_W / 2 - 104, 164, menu_sel == 6 ? "> CREDITS     (AND MUSIC)" : "  CREDITS     (AND MUSIC)", menu_sel == 6 ? col_yellow : col_light);
-		hud_text(SCREEN_W / 2 - 104, 175, menu_sel == 7 ? "> BACK" : "  BACK", menu_sel == 7 ? col_yellow : col_light);
+		hud_text(SCREEN_W / 2 - 104, 153, menu_sel == 5 ? "> CREDITS     (AND MUSIC)" : "  CREDITS     (AND MUSIC)", menu_sel == 5 ? col_yellow : col_light);
+		hud_text(SCREEN_W / 2 - 104, 164, menu_sel == 6 ? "> BACK" : "  BACK", menu_sel == 6 ? col_yellow : col_light);
 		hud_text(SCREEN_W / 2 - 68, 189, "LEFT/RIGHT CHANGE", col_grey);
 	}
 	(void)frame;
@@ -3025,7 +3043,7 @@ static int menu_input(int hit, int held)
 		return getenv("HB_DEMO") ? 2 : 1;          /* HB_DEMO=1: the demo */
 	}
 #endif
-	const int items = menu_page == 0 ? 2 : menu_page == 2 ? 1 : 8;
+	const int items = menu_page == 0 ? 2 : menu_page == 2 ? 1 : 7;
 	if (hit & PAD_UP) menu_sel = (menu_sel + items - 1) % items;
 	if (hit & PAD_DOWN) menu_sel = (menu_sel + 1) % items;
 	/* left / right: once per press, then repeating while held */
@@ -3059,9 +3077,8 @@ static int menu_input(int hit, int held)
 		if (menu_sel == 2 && (step || ok)) { opt_music ^= 1; music(TRACK_MENU); }
 		if (ok && menu_sel == 3) { menu_page = 2; menu_sel = 0; }
 		if (ok && menu_sel == 4) return 4;          /* the story */
-		if (ok && menu_sel == 5) return 2;          /* the demo */
-		if (ok && menu_sel == 6) return 3;          /* the credits */
-		if (ok && menu_sel == 7) { menu_page = 0; menu_sel = 1; }
+		if (ok && menu_sel == 5) return 3;          /* the credits */
+		if (ok && menu_sel == 6) { menu_page = 0; menu_sel = 1; }
 	}
 	return 0;
 }
@@ -3159,8 +3176,7 @@ int main(int argc, char *argv[])
 			/* the demo ends: back to the options menu (the attract mode: the main menu) */
 			demo = 0; demo_rec = -1; demo_next = 0;
 			gs = GS_MENU;
-			if (attract) { menu_page = 0; menu_sel = 0; attract = 0; }
-			else { menu_page = 1; menu_sel = 5; }
+			menu_page = 0; menu_sel = 0; attract = 0;   /* (the demos play only in the attract mode) */
 			idle_ms = 0;
 			music(TRACK_MENU);
 			pad_prev = pad;
@@ -3213,7 +3229,7 @@ int main(int argc, char *argv[])
 			/* OPTIONS - CREDITS: the plasma, the credits, the music player (credits.c) */
 			if (credits_input(hit))
 			{
-				gs = GS_MENU; menu_page = 1; menu_sel = 6;
+				gs = GS_MENU; menu_page = 1; menu_sel = 5;
 				music(TRACK_MENU);
 				pad_prev = pad;
 				continue;
@@ -3471,7 +3487,7 @@ int main(int argc, char *argv[])
 				if (e->type != E_NONE && kinds[e->type].shootable && e->type != E_POWERBLOCK && in) { on++; act += e->active; }
 			}
 			(void)map_in;
-			fprintf(stderr, "ENEMIES frame %u at %d,%d: on screen %d (active %d)\n", frame, (int)(pl.x >> 8), (int)(pl.y >> 8), on, act);
+			fprintf(stderr, "ENEMIES frame %u at %d,%d: on screen %d (active %d) bats %d\n", frame, (int)(pl.x >> 8), (int)(pl.y >> 8), on, act, bats_awake());
 		}
 #endif
 		plat_border_colour(0);

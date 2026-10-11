@@ -26,9 +26,6 @@ The game starts at a menu:
     song titles from the modules). Left / Right choose a track, A plays, B stops, C the next
     plasma, Up / Down the plasma's speed, Start back. No pause: the unchanged Sub-CPU program
     has play and stop only.
-  - **DEMO**: the stages play by themselves, one after the other from the one chosen under
-    LEVEL (the demo robot; it takes no damage); each runs to its end or 2 minutes; any button
-    returns to the menu.
   - **BACK**.
 
 Up / Down choose, Left / Right change, B, C, A or Start select. A minute in the menus without a
