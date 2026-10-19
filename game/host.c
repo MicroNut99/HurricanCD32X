@@ -45,8 +45,8 @@ static uint32_t read_file(const char *name, uint32_t off, uint32_t max)
 void plat_init(void)
 {
 	cart = calloc(1, 0x400000);
-	boot_bytes = read_file("IMAGE8.RAW", 0x100000, 0x180000);
-	if (!boot_bytes || !pack_mount(cart + 0x100000)) plat_fatal("no resident pack IMAGE8.RAW in HB_DIR");
+	boot_bytes = read_file("IMAGE8.RAW", PLAT_CART_DATA_OFFSET, 0x180000);
+	if (!boot_bytes || !pack_mount(cart + PLAT_CART_DATA_OFFSET)) plat_fatal("no resident pack IMAGE8.RAW in HB_DIR");
 }
 
 const uint8_t *plat_cart_ptr(uint32_t off) { return cart + off; }
@@ -59,6 +59,146 @@ int32_t plat_load_pack(int id, uint32_t off, uint32_t max)
 	const uint32_t n = read_file(name, off, max);
 	return n ? (int32_t)n : -1;
 }
+
+#if OJ32X_CART_MB
+/* ---- the 8 / 16 MB cart, modelled (port/plat.h, port/cartcache.c; as OpenJazz's
+ * port/plat_host.c). HB_CART_MB=4|8|16 is the board (4: no mapper, 8: pages 4-7 mirror 0-3),
+ * HB_CART_FILE=<file> keeps the pages from one run to the next. Window 1's content
+ * (cart 0x200000-0x3EFFFF) is swapped with the page's store on a page change. */
+#define HP_WIN   0x200000u
+#define HP_ROOM  0x1F0000u
+static int hp_now = 1, hp_board;
+static uint8_t *hp_store[8];
+static uint8_t hp_piece[8][16 * 4096];
+
+static int hp_model(void)
+{
+	if (!hp_board) {
+		hp_board = atoi(env("HB_CART_MB", "0"));
+		if (!hp_board) hp_board = OJ32X_CART_MB;
+		if (hp_board != 4 && hp_board != 8) hp_board = 16;
+		fprintf(stderr, "[host] cart: %d MB board\n", hp_board);
+	}
+	return hp_board;
+}
+static int hp_phys(int page) { return hp_model() == 4 ? 1 : hp_model() == 8 ? (page & 3) : page; }
+
+static void hp_save(void)
+{
+	const char *path = getenv("HB_CART_FILE");
+	if (!path || !*path || !cart) return;
+	const int now = hp_phys(hp_now);
+	if (!hp_store[now]) hp_store[now] = malloc(HP_ROOM);
+	memcpy(hp_store[now], cart + HP_WIN, HP_ROOM);
+	FILE *f = fopen(path, "wb");
+	if (!f) return;
+	for (int i = 0; i < 8; i++) {
+		const uint8_t has = hp_store[i] != NULL;
+		fwrite(&has, 1, 1, f);
+		if (has) fwrite(hp_store[i], 1, HP_ROOM, f);
+	}
+	fwrite(hp_piece, 1, sizeof hp_piece, f);
+	fclose(f);
+}
+static void hp_restore(void)
+{
+	static int done;
+	if (done) return;
+	done = 1;
+	atexit(hp_save);
+	const char *path = getenv("HB_CART_FILE");
+	FILE *f = path && *path ? fopen(path, "rb") : NULL;
+	if (!f) return;
+	for (int i = 0; i < 8; i++) {
+		uint8_t has = 0;
+		if (fread(&has, 1, 1, f) != 1) break;
+		if (has) {
+			hp_store[i] = malloc(HP_ROOM);
+			if (fread(hp_store[i], 1, HP_ROOM, f) != HP_ROOM) break;
+		}
+	}
+	if (fread(hp_piece, 1, sizeof hp_piece, f) != sizeof hp_piece) memset(hp_piece, 0, sizeof hp_piece);
+	fclose(f);
+	if (hp_store[1]) memcpy(cart + HP_WIN, hp_store[1], HP_ROOM);   /* page 1 after reset */
+	fprintf(stderr, "[host] cart pages restored from %s\n", path);
+}
+
+int plat_cart_page_now(void) { return hp_now; }
+
+int plat_cart_page(int page)
+{
+	hp_restore();
+	if (page < 1 || page > 7) return 0;
+	const int from = hp_phys(hp_now), to = hp_phys(page);
+	hp_now = page;
+	if (from == to) return 1;
+	if (!hp_store[from]) hp_store[from] = malloc(HP_ROOM);
+	if (!hp_store[to]) { hp_store[to] = malloc(HP_ROOM); memset(hp_store[to], 0xFF, HP_ROOM); }
+	memcpy(hp_store[from], cart + HP_WIN, HP_ROOM);
+	memcpy(cart + HP_WIN, hp_store[to], HP_ROOM);
+	return 1;
+}
+
+static long hp_file(int id, uint8_t **data)
+{
+	char path[1024];
+	snprintf(path, sizeof path, "%s/OJ%03d.PAK", env("HB_DIR", "."), id - PACK_LEVEL_ID0);
+	FILE *f = fopen(path, "rb");
+	if (!f) return -1;
+	fseek(f, 0, SEEK_END);
+	long len = ftell(f);
+	if (data) {
+		fseek(f, 0, SEEK_SET);
+		*data = malloc((size_t)len);
+		if (fread(*data, 1, (size_t)len, f) != (size_t)len) len = -1;
+	}
+	fclose(f);
+	return len;
+}
+
+int32_t plat_pack_open(int id) { return (int32_t)hp_file(id, NULL); }
+
+int32_t plat_load_pack_at(int id, uint32_t cart_offset, uint32_t max_bytes)
+{
+	const long l = hp_file(id, NULL);
+	if (l <= 0 || (uint32_t)l > max_bytes) return -1;
+	if (getenv("HB_TRACE")) fprintf(stderr, "disc read: OJ%03d.PAK -> cart %06X\n", id - PACK_LEVEL_ID0, (unsigned)cart_offset);
+	return plat_load_pack(id, cart_offset, max_bytes);
+}
+
+int plat_pack_same_as_disc(int id, uint32_t cart_offset, uint32_t len)
+{
+	uint8_t *d = NULL;
+	const long l = hp_file(id, &d);
+	int same = l == (long)len;
+	if (same) {
+		const uint8_t *c = cart + cart_offset;
+		const uint32_t chunks = (len + 32767) >> 15, last = (chunks - 1) << 15;
+		const uint32_t n0 = len < 32768 ? len : 32768, n1 = len - last;
+		same = memcmp(c, d, n0) == 0 && memcmp(c + last, d + last, n1) == 0;
+	}
+	free(d);
+	return same;
+}
+
+int plat_cart_piece_write(int piece, const uint16_t *words, int n)
+{
+	hp_restore();
+	uint8_t *p = hp_piece[hp_phys(hp_now)] + (piece & 15) * 4096;
+	for (int i = 0; i < n && i < 2048; i++) { p[2 * i] = (uint8_t)(words[i] >> 8); p[2 * i + 1] = (uint8_t)words[i]; }
+	return 1;
+}
+
+void plat_cart_piece_read(int piece, uint16_t *words, int n)
+{
+	hp_restore();
+	const uint8_t *p = hp_piece[hp_phys(hp_now)] + (piece & 15) * 4096;
+	for (int i = 0; i < n && i < 2048; i++) words[i] = (uint16_t)(p[2 * i] << 8 | p[2 * i + 1]);
+}
+
+void plat_save_area_enter(void) { }
+void plat_save_area_leave(void) { }
+#endif
 
 void plat_sfx(int id) { if (getenv("HB_LOG")) fprintf(stderr, "[%u] sfx %d\n", frame, id); }
 void plat_music(int track) { if (getenv("HB_LOG")) fprintf(stderr, "[%u] music %d%s\n", frame, track & 0x7FFF, track & 0x8000 ? " once" : ""); }

@@ -19,6 +19,9 @@ import sys
 SH2_OFF = 0x8000
 CHUNK = 0x8000
 ENGINE_END = 0x100000      # graphics area starts here (port/plat.h PLAT_CART_DATA_OFFSET)
+# the 8 / 16 MB cart test builds put the common pack at 0x060000 (mars/Makefile passes ENGINE_END)
+import os
+ENGINE_END = int(os.environ.get("ENGINE_END", str(ENGINE_END)), 0)
 
 
 def elf_symbols(path):

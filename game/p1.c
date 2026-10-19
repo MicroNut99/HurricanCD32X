@@ -41,6 +41,9 @@
  */
 #include "plat.h"
 #include "pack.h"
+#if OJ32X_CART_MB
+#include "cartcache.h"
+#endif
 
 /* the added enemy kinds: a list of K2(...) lines and their code (game/k2/README.md) */
 #ifndef K2_LIST
@@ -65,8 +68,16 @@
 #define SCREEN_W   320
 
 #define NSTAGES    9             /* OJ001.PAK .. OJ009.PAK */
+#if OJ32X_CART_MB
+/* the 8 / 16 MB cart test builds (docs/CART_8MB_16MB.md): the common pack at 0x060000 (page
+ * 0), the home slot is window 1 (page 1); the stages stay in the cart's other pages
+ * (port/cartcache.c) */
+#define STAGE_CART 0x200000u
+#define STAGE_MAX  0x1F0000u
+#else
 #define STAGE_CART 0x280000u
 #define STAGE_MAX  0x170000u
+#endif
 
 /* 16-bit frame buffer access (Kobo rule 4: no byte writes); b0 = byte at the lower address */
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -3037,11 +3048,37 @@ static int stage_in_cart;          /* the stage whose pack is in the RAM cart (0
 static void genbg_off(void);
 static void genbg_load(void);
 static void genbg_scroll(void);
+#if OJ32X_CART_MB
+static int stage_page = 1;         /* the cart page that holds it (8 / 16 MB test builds) */
+static uint32_t stage_off = STAGE_CART;
+/* a pack in the cart's cache pages (port/cartcache.c), else the home slot (a 4 MB cart);
+ * returns its length (> 0) and where it is */
+static int32_t cart_pack(int id, uint32_t *at)
+{
+	uint32_t off, none;
+	plat_music(0);                 /* the cache check reads the disc too */
+	if (cartcache_world(id, 0, &off, &none)) { *at = off; return 1; }
+	if (plat_cart_page_now() != 1) plat_cart_page(1);
+	*at = STAGE_CART;
+	return plat_load_pack_at(id, STAGE_CART, STAGE_MAX);
+}
+#endif
 static void load_stage(int n)
 {
 	/* the pack of the stage loaded last is still in the cart (the SH2 only reads it): playing
 	 * that stage again (restart, game over, main menu) needs no disc read - only a new mount */
 	int32_t len = 1;
+#if OJ32X_CART_MB
+	if (n != stage_in_cart)
+	{
+		stage_in_cart = 0;
+		len = cart_pack(PACK_LEVEL_ID0 + n, &stage_off);
+		stage_page = plat_cart_page_now();
+	}
+	else if (plat_cart_page_now() != stage_page)
+		plat_cart_page(stage_page);
+	if (len <= 0 || !pack_mount_at(1, plat_cart_ptr(stage_off)))
+#else
 	if (n != stage_in_cart)
 	{
 		stage_in_cart = 0;
@@ -3050,6 +3087,7 @@ static void load_stage(int n)
 		len = plat_load_pack(PACK_LEVEL_ID0 + n, STAGE_CART, STAGE_MAX);
 	}
 	if (len <= 0 || !pack_mount_at(1, plat_cart_ptr(STAGE_CART)))
+#endif
 	{
 		static char msg[40];
 		char *q = put_str(msg, "STAGE PACK OJ00");

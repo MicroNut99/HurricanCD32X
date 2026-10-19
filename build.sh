@@ -23,6 +23,13 @@ python3 -c "import numpy, PIL" 2>/dev/null \
 grep -q '^#define CDL_TARGET_OPENLARA 1' "$HERE/cd32x/sh2/cdloader_sh2.c" \
   || { echo "*** cd32x/sh2/cdloader_sh2.c is not in OpenLara mode - stopping"; exit 1; }
 
+# CART=8 / CART=16: the 8 / 16 MB cart test builds (docs/CART_8MB_16MB.md): the common pack at
+# cart 0x060000, the stages kept in the cart's other pages, Sub-CPU CMD 68 (window 1's page) and
+# CMD 38's destination. Unset: the 4 MB build, unchanged. DISC_NAME: the disc's file name.
+CART="${CART:-}"
+case "$CART" in ""|8|16) ;; *) echo "*** CART must be 8 or 16 (or unset) - stopping"; exit 1;; esac
+[ -n "$CART" ] && echo "==> cart: the $CART MB test build"
+DISC_NAME="${DISC_NAME:-HurricanP2a}"
 echo "==> splash";      python3 "$HERE/tools/make_splash.py" "$DATA" "$HERE/build/Splash.png"
                         python3 "$HERE/tools/make_boot_image.py" "$HERE/build/Splash.png" "$ROMS/IMAGE.RAW"
                         python3 "$HERE/tools/splash_bar_colours.py" "$ROMS/IMAGE.RAW"
@@ -31,6 +38,7 @@ echo "==> data packs";  rm -f "$ROMS"/IMAGE8.RAW "$ROMS"/IMAGE9.RAW "$ROMS"/OJ*.
                         python3 "$HERE/tools/hur_story.py" "$DATA" "$ROMS/OJ010.PAK"      # OPTIONS - STORY
 SIZE=$(stat -c %s "$ROMS/IMAGE8.RAW")
 [ "$SIZE" -le $((0x180000)) ] || { echo "*** IMAGE8.RAW is $SIZE bytes: more than the 1.5 MB before the stage pack area - stopping"; exit 1; }
+if [ -n "$CART" ]; then [ "$SIZE" -le $((0x190000)) ] || { echo "*** IMAGE8.RAW is $SIZE bytes: more than the $((0x190000)) page 0 has for it (0x060000-0x1F0000) - stopping"; exit 1; }; fi
 echo "==> sound effects"; python3 "$HERE/tools/make_hur_sfx.py" "$DATA" "$ROMS/SFX00.BIN"
 # music: Hurrican's modules rendered to CD audio tracks with the bundled libxmp-lite
 # (tools/libxmp-lite, LGPL) - one pass each (the console repeats a track):
@@ -46,12 +54,13 @@ echo "==> music";       MUS="$HERE/build/music"; mkdir -p "$MUS"
                           "$HERE/build/it2wav" "$DATA/music/$SONG.it" "$MUS/Track$(printf %02d $T).wav" 300 1 0.32   # -10 dB
                           T=$((T + 1))
                         done
-echo "==> engine";      rm -rf "$HERE/mars/obj"     # the music switch is compiled into port/plat_mars.c
-                        make -C "$HERE/mars" EXTRA_DEFS="-DOJ32X_MUSIC=1"
+echo "==> engine";      rm -rf "$HERE"/mars/obj "$HERE"/mars/obj_cart*     # the music switch is compiled into port/plat_mars.c
+                        rm -f "$HERE/mars/hurrican32x.elf" "$HERE/mars/hurrican32x.bin" "$HERE/mars/OPENJAZZ.32X"
+                        make -C "$HERE/mars" EXTRA_DEFS="-DOJ32X_MUSIC=1" CART="$CART"
 [ -f "$HERE/mars/OPENJAZZ.32X" ] || { echo "*** mars/OPENJAZZ.32X was not made - stopping"; exit 1; }
 echo "==> ROM check";   python3 "$HERE/cd32x/ref/openlara/tools/prep_openlara_cd.py" "$HERE/mars/OPENJAZZ.32X" "$ROMS/OPENLARA.32X"
 echo "==> SH2 loader";  cd "$HERE/cd32x/sh2"    && make -f Makefile.cdloader clean && make -f Makefile.cdloader
-echo "==> Sub-CPU";     cd "$HERE/cd32x/subcpu" && make clean && make cd
+echo "==> Sub-CPU";     cd "$HERE/cd32x/subcpu" && make clean && make cd CART_DEFS="${CART:+-DCART_PAGED}"
 
 ISO="$HERE/cd32x/subcpu/CDROMPlayer.iso"
 [ -f "$ISO" ] || { echo "*** $ISO was not made - stopping"; exit 1; }
@@ -65,7 +74,7 @@ cmp -s "$HERE/cd32x/subcpu/cd/OPENLARA.32X" "$ROMS/OPENLARA.32X" || { echo "*** 
 echo "==> disc checked: loader + program + splash + packs + sound effects"
 
 # the mixed-mode image: data track + audio tracks 2-13 (as the J19b build with music)
-cd "$HERE/cd32x/subcpu" && python3 make_mixed_cd2.py CDROMPlayer.iso "$MUS"/Track*.wav --out HurricanP2a
+cd "$HERE/cd32x/subcpu" && python3 make_mixed_cd2.py CDROMPlayer.iso "$MUS"/Track*.wav --out "$DISC_NAME"
 echo
 echo "==> done:"
-echo "    disc: cd32x/subcpu/HurricanP2a.cue (with its .bin)"
+echo "    disc: cd32x/subcpu/$DISC_NAME.cue (with its .bin)"

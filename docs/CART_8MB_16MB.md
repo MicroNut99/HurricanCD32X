@@ -14,6 +14,42 @@ numbers and changes.
 **Reviewed:** an independent review (Claude Fable, 19 Oct 2026) corrected the common pack's
 end, the home slot, CMD 38's destination and the list of files to change; fixed here.
 
+## The 8 MB and 16 MB test builds (built, not yet run on a console)
+
+```
+cd /mnt/s/KoboPort/sega-toolchain-12.1/sega/HurricanCD32X && \
+CART=16 bash CART/tools/make_disc.sh
+```
+
+- **The source** is this repository (the P1q line), unpacked into `HurricanCD32X\CART\`, so it
+  uses the title's `HurricanData`.
+- **The disc** goes to `discs\HurricanP1q-16MB\`. `CART=8` gives `HurricanP1q-8MB`.
+- **Without `CART`** it is the 4 MB P1q build, unchanged.
+
+The mechanism is OpenJazz R5's (`port/cartcache.c`, the same file with the title "HURR"):
+- **The common pack** sits at 0x060000. The engine (352 KB) must end before it, and the build
+  checks that.
+- **The board probe** runs at the first stage load.
+- **Each stage pack, and the story,** go into pages 2-3 (8 MB) or 2-7 (16 MB), with a record in
+  each page's tail.
+- **A stage is used again** after its disc compare and checksum pass. When no page has room,
+  the page used longest ago is cleared.
+- **On a 4 MB cart** the home slot at 0x200000 is used, as before.
+
+**The test builds do not use the home slot as a cache.** On a 4 MB cart it stays the fallback.
+So the 8 MB build keeps about 5 stages (4 MB of pages), not the 9 of the plan below; the 16 MB
+build keeps all 9 and the story.
+
+**Checked on the PC** (`make -C host CART=16`, then `HB_CART_MB=4|8|16` for the modelled board
+and `HB_CART_FILE=<file>` for the pages between runs):
+- **Stage 1 from a cached page:** the same pictures as the 4 MB build, and a second run took it
+  from the cart.
+- **8 MB:** all 10 packs loaded in turn, with the oldest page cleared when the cart was full.
+  The 3 packs that stayed came from the cart in the next run.
+- **The engine** builds for CART=8 and 16 (the 4 MB build has none of the new code), and the
+  Sub-CPU compiles with CMD 68.
+- **Not run here:** the whole disc (Hurrican's data is not in this workspace).
+
 ## 1. What changes for the player
 
 | Cart | Stages in the cart | Loading |
