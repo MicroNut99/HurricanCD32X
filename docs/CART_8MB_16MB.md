@@ -40,6 +40,16 @@ The mechanism is OpenJazz R5's (`port/cartcache.c`, the same file with the title
 So the 8 MB build keeps about 5 stages (4 MB of pages), not the 9 of the plan below; the 16 MB
 build keeps all 9 and the story.
 
+**Reviewed (Claude Fable, 19 Oct 2026), and fixed:**
+- **The common pack would not have loaded on the console.** The SH2 asked for file 4 / 3
+  instead of IMAGE8.RAW (file 8). The PC model never runs that path, so it could not show it.
+- **Packs now start on 32 KB boundaries.** The Sub-CPU's compare (CMD 47) sets the 1 MB bank
+  once per 32 KB chunk, so a chunk crossing a bank would have read the wrong memory and cleared
+  good pages.
+- **A damaged page record can no longer point past the page.**
+- **Hurrican: the story resets the stage lookup.** The story's load can clear the stage's
+  page, so the stage is looked up again afterwards.
+
 **Checked on the PC** (`make -C host CART=16`, then `HB_CART_MB=4|8|16` for the modelled board
 and `HB_CART_FILE=<file>` for the pages between runs):
 - **Stage 1 from a cached page:** the same pictures as the 4 MB build, and a second run took it
