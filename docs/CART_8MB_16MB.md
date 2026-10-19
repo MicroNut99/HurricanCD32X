@@ -58,8 +58,8 @@ the last 64 KB of every page is its tail (the owner record).
 | page 2 | 1, 2, 4 | 1,960,148 | 71,468 |
 | page 3 | 3, 5, 6 | 1,976,404 | 55,212 |
 
-**All nine stages fit.** The story (388,828 bytes) does not: the 8 MB cart has 6,668,288 bytes
-for packs (2,482,176 + 2 × 2,031,616 = 6,545,408), and stages + story are 6,753,572: 208,164
+**All nine stages fit.** The story (388,828 bytes) does not: the 8 MB cart has room for
+packs of (2,482,176 + 2 × 2,031,616 = 6,545,408), and stages + story are 6,753,572: 208,164
 short. That leaves two choices:
 
 - **(a) Default, nothing to trim.** The story stays as it is today. When STORY is picked in
@@ -88,7 +88,7 @@ Everything is resident, with no trims:
 | engine end at 0x060000 | `port/plat.h` `PLAT_CART_DATA_OFFSET`; `port/mars/oj.ld` rom LENGTH (0xF8000 → 0x58000); `tools/make_oj_rom.py` `ENGINE_END`; `tools/hur_convert.py` `RESIDENT_MAX` / `STAGE_MAX`; `game/host.c` (the PC build reads the common pack at 0x100000); `plat_mars.c` `PACK_SLOT`; a new engine-size check in `build.sh` (it checks only IMAGE8 today) |
 | `cd32x/subcpu/main.c` | CMD 68 (shared proposal, variant B); CMD 38's destination offset (COMM2 bit 15 + COMM8L = cart offset), because IMAGE8 at 0x060000 and stages at arbitrary offsets are not 128 KB slots; W1 = 1 before CMD 60 |
 | `cd32x/subcpu/hw_md.s` | no change (CMD 68 uses the existing `chilly_rv_memcpy`) |
-| `game/p1.c` `load_stage` | `stage_in_cart` and `STAGE_CART` give way to the directory lookup. A stage in the cart is mounted after `plat_cart_page` with no loading screen; one that is not is placed and loaded with CMD 38's destination |
+| `game/p1.c` `load_stage` | `stage_in_cart` and `STAGE_CART` give way to the directory lookup. A stage in the cart is checked by checksum (≥ 0.2 s per MB, up to 0.2 s for the largest stage: Sonic CD32X may overwrite pages 2-7 without touching their tails) and mounted after `plat_cart_page` with no loading screen; one that is not is placed and loaded with CMD 38's destination |
 | `game/story.c` | the story pack through the same lookup (8 MB: plan (a) or (b)) |
 | `build.sh` | checks: engine ≤ 0x060000, common ≤ 0x192000, every stage fits the place the plan gives it |
 
