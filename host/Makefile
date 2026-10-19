@@ -13,9 +13,16 @@ ifneq ($(K2),)
 CFLAGS += -DK2_LIST='"k2/$(K2)_list.h"' -DK2_CODE='"k2/$(K2).c"'
 endif
 SRC    := ../game/p1.c ../game/host.c ../port/pack.c
+# CART=8 / CART=16: the 8 / 16 MB cart test build (docs/CART_8MB_16MB.md) -> hurrican_p1_host_cart16;
+# HB_CART_MB=4|8|16 is the board it models, HB_CART_FILE=<file> keeps its pages between runs
+ifneq ($(CART),)
+CFLAGS += -DOJ32X_CART_MB=$(CART)
+SRC    += ../port/cartcache.c
+BINSUF := _cart$(CART)
+endif
 DEPS   := $(wildcard ../game/*.c ../game/*.h ../game/k2/*.c ../game/k2/*.h)
-all: $(OUT)/hurrican_p1_host
-$(OUT)/hurrican_p1_host: $(SRC) $(DEPS) ../port/pack.h ../port/plat.h
+all: $(OUT)/hurrican_p1_host$(BINSUF)
+$(OUT)/hurrican_p1_host$(BINSUF): $(SRC) $(DEPS) ../port/pack.h ../port/plat.h
 	@mkdir -p $(OUT)
 	$(CC) $(CFLAGS) -o $@ $(SRC)
 asan: $(SRC) $(DEPS)

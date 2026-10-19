@@ -20,7 +20,8 @@ ROOT  := ..
 PORT  := $(ROOT)/port
 GAME  := $(ROOT)/game
 
-OBJDIR := obj
+# CART=8 / CART=16: the 8 / 16 MB cart test builds (docs/CART_8MB_16MB.md), objects of their own
+OBJDIR := obj$(if $(CART),_cart$(CART))
 
 # ---- the J19b engine build's settings (mars/Makefile of the OpenJazz port, J19b) ----
 PORT_OPT  := $(ARCH) -Os -ffunction-sections -fdata-sections
@@ -28,7 +29,7 @@ PORT_DEFS := -DOJ32X -DOJ32X_MARS -DOJ_SDL1 -DPORTABLE -DNDEBUG \
              -DOJ_VERSION=\"git-oj32x\" -DOJ_DATE=\"2026-10-06\" -D__32X__ -DMARS \
              -DOJ_URL=\"http://alister.eu/jazz/oj/\" -DOJ_BUGREPORT=\"https://github.com/AlisterT/openjazz/issues\" \
              -DLIBXMP_CORE_PLAYER -DLIBXMP_STATIC -DXMP_SYM_VISIBILITY \
-             -DOJ32X_SCROLL -DOJ32X_FAST_CODE -DOJ32X_PANEL_DIFF -DOJ32X_FLIP_ASYNC -DOJ32X_SLAVE_DRAWS=1 $(EXTRA_DEFS)
+             -DOJ32X_SCROLL -DOJ32X_FAST_CODE -DOJ32X_PANEL_DIFF -DOJ32X_FLIP_ASYNC -DOJ32X_SLAVE_DRAWS=1 $(EXTRA_DEFS) $(if $(CART),-DOJ32X_CART_MB=$(CART))
 PORT_INCS := -I$(PORT)/include -I$(PORT)
 PORT_CXXFLAGS := -std=gnu++14 $(PORT_OPT) $(PORT_DEFS) $(PORT_INCS) -fno-threadsafe-statics -Wall -Wno-unused-result -Wno-narrowing -MMD -MP
 PORT_CFLAGS   := -std=gnu11 $(PORT_OPT) $(PORT_DEFS) $(PORT_INCS) -w -MMD -MP
@@ -37,6 +38,7 @@ PORT_CFLAGS   := -std=gnu11 $(PORT_OPT) $(PORT_DEFS) $(PORT_INCS) -w -MMD -MP
 GAME_CFLAGS := -std=gnu11 $(ARCH) -O2 -ffunction-sections -fdata-sections $(PORT_DEFS) $(PORT_INCS) -Wall -MMD -MP
 
 PORT_OBJS := $(OBJDIR)/plat_mars.o $(OBJDIR)/mars_syscalls.o $(OBJDIR)/pack.o $(OBJDIR)/mars_boottest.o
+PORT_OBJS += $(if $(CART),$(OBJDIR)/cartcache.o)
 OBJS := $(OBJDIR)/p1.o $(PORT_OBJS)
 LD_SCRIPT := $(PORT)/mars/oj.ld
 
@@ -52,7 +54,7 @@ hurrican32x.bin: hurrican32x.elf
 	$(TC)objcopy -O binary -j .sdcode -j .data -j .text $< $@
 
 OPENJAZZ.32X: hurrican32x.elf hurrican32x.bin $(ROOT)/tools/make_oj_rom.py $(ROOT)/tools/mars_boot.bin
-	python3 $(ROOT)/tools/make_oj_rom.py $(ROOT)/tools/mars_boot.bin hurrican32x.elf hurrican32x.bin $@
+	$(if $(CART),ENGINE_END=0x060000) python3 $(ROOT)/tools/make_oj_rom.py $(ROOT)/tools/mars_boot.bin hurrican32x.elf hurrican32x.bin $@
 
 report.txt: hurrican32x.elf
 	@{ echo "== SH2 sections (bytes)"; $(SIZE) -A hurrican32x.elf | grep -E "sdcode|data|text|bss|Total"; } > $@
@@ -72,7 +74,7 @@ $(OBJDIR)/%.o: $(PORT)/%.cpp
 	$(CXX) $(PORT_CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -rf obj hurrican32x.elf hurrican32x.bin hurrican32x.map OPENJAZZ.32X report.txt
+	rm -rf obj obj_cart8 obj_cart16 hurrican32x.elf hurrican32x.bin hurrican32x.map OPENJAZZ.32X report.txt
 .PHONY: all clean
 
 $(OBJS) $(OBJDIR)/crt0_oj.o: Makefile

@@ -7,6 +7,10 @@
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 NAME=HurricanP1q
+# CART=8 / CART=16: the 8 / 16 MB cart test builds (docs/CART_8MB_16MB.md): HurricanP1q-8MB / -16MB
+case "${CART:-}" in ""|8|16) ;; *) echo "CART must be 8 or 16 (or unset)"; exit 1;; esac
+[ -n "${CART:-}" ] && NAME="HurricanP1q-${CART}MB"
+export CART="${CART:-}" DISC_NAME="$NAME"
 # everything stays inside the title's folder: the disc goes to discs/<name>/ in it (a test
 # build unpacked into a sub-folder of HurricanCD32X puts its disc there too)
 TOP="$HERE"

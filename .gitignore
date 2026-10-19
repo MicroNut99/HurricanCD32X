@@ -24,3 +24,5 @@ frame_*.ppm
 discs/
 HurricanData/
 BG1/
+mars/obj_cart*/
+host/hurrican_p1_host_cart*

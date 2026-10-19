@@ -26,9 +26,18 @@ static int story_saved_dark;
 static int story_enter(void)
 {
 	plat_music(0);                                   /* no CD data reads while music plays */
+#if OJ32X_CART_MB
+	/* 8 / 16 MB test builds: the story is cached like a stage (port/cartcache.c); only when it
+	 * goes to the home slot (a 4 MB cart) does it take the stage's place */
+	uint32_t at;
+	const int32_t len = cart_pack(PACK_LEVEL_ID0 + STORY_PACK, &at);
+	if (at == STAGE_CART) stage_in_cart = 0;
+	if (len <= 0 || !pack_mount_at(1, plat_cart_ptr(at))) { music(TRACK_MENU); return 0; }
+#else
 	stage_in_cart = 0;                               /* the stage area holds the story now */
 	const int32_t len = plat_load_pack(PACK_LEVEL_ID0 + STORY_PACK, STAGE_CART, STAGE_MAX);
 	if (len <= 0 || !pack_mount_at(1, plat_cart_ptr(STAGE_CART))) { music(TRACK_MENU); return 0; }
+#endif
 	char name[8] = "PIC0";
 	uint32_t size;
 	for (int k = 0; k < 6; k++)

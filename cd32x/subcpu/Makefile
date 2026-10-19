@@ -16,6 +16,10 @@ INCPATH = -I. -I../../include -I$(ROOTDIR)/m68k-elf/include -I$(ROOTDIR)/m68k-el
 
 CCFLAGS = -m68000 -Wall -Ofast -c -fomit-frame-pointer
 HWFLAGS = -m68000 -Wall -O1 -c -fomit-frame-pointer
+# CART=8 / CART=16 test builds (build.sh passes CART_DEFS=-DCART_PAGED): CMD 68, CMD 38's
+# destination, the common pack at 0x060000 (docs/CART_8MB_16MB.md)
+CCFLAGS += $(CART_DEFS)
+HWFLAGS_EXTRA = $(CART_DEFS)
 LDFLAGS = -T $(LDSCRIPTSDIR)/cd.ld -Wl,-Map=output.map -nostdlib
 ASFLAGS = -m68000 --register-prefix-optional
 
@@ -77,7 +81,7 @@ $(TARGET).elf: $(OBJS) $(FILES)
 	$(ASMZ80) $(FLAGSZ80) -o $@ $<
 
 main.o: main.c
-	$(CC) $(HWFLAGS) $(INCPATH) $< -o $@
+	$(CC) $(HWFLAGS) $(HWFLAGS_EXTRA) $(INCPATH) $< -o $@
 
 %.o: %.c
 	$(CC) $(CCFLAGS) $(INCPATH) $< -o $@
