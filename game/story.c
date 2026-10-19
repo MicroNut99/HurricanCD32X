@@ -31,7 +31,7 @@ static int story_enter(void)
 	 * goes to the home slot (a 4 MB cart) does it take the stage's place */
 	uint32_t at;
 	const int32_t len = cart_pack(PACK_LEVEL_ID0 + STORY_PACK, &at);
-	if (at == STAGE_CART) stage_in_cart = 0;
+	stage_in_cart = 0;     /* the stage is looked up again (its page may have been cleared) */
 	if (len <= 0 || !pack_mount_at(1, plat_cart_ptr(at))) { music(TRACK_MENU); return 0; }
 #else
 	stage_in_cart = 0;                               /* the stage area holds the story now */
