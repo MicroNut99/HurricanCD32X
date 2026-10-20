@@ -45,7 +45,19 @@ echo "==> sound effects"; python3 "$HERE/tools/make_hur_sfx.py" "$DATA" "$ROMS/S
 #   2 menu, 3 stage clear, 4 game over, 5-13 stages 1-9 (the songs the stages' map files name),
 #   14 the credits (OPTIONS - CREDITS, game/credits.c), 15-23 the bosses of stages 1-9,
 #   24 the intro (OPTIONS - STORY, game/story.c)
-echo "==> music";       MUS="$HERE/build/music"; mkdir -p "$MUS"
+echo "==> music";       MUS="$HERE/build/music"; mkdir -p "$MUS"; rm -f "$MUS"/Track*.wav
+# NOMUSIC=1: a disc without the music (one 2 s silent audio track, the engine plays none) -
+# small, for emulators
+MUSIC_DEFS="-DOJ32X_MUSIC=1"
+if [ -n "${NOMUSIC:-}" ]; then
+                        MUSIC_DEFS=""
+                        python3 - "$MUS/Track02.wav" <<'PY'
+import sys, wave
+w = wave.open(sys.argv[1], "wb"); w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100)
+w.writeframes(bytes(4 * 44100 * 2)); w.close()
+PY
+                        echo "    no music (NOMUSIC=1): one silent audio track"
+else
                         gcc -O2 -DLIBXMP_CORE_PLAYER -DLIBXMP_STATIC -I"$HERE/tools/libxmp-lite/include" -I"$HERE/tools/libxmp-lite/src" \
                             -o "$HERE/build/it2wav" "$HERE/tools/it2wav.c" "$HERE"/tools/libxmp-lite/src/*.c "$HERE"/tools/libxmp-lite/src/loaders/*.c -lm
                         T=2
@@ -54,9 +66,10 @@ echo "==> music";       MUS="$HERE/build/music"; mkdir -p "$MUS"
                           "$HERE/build/it2wav" "$DATA/music/$SONG.it" "$MUS/Track$(printf %02d $T).wav" 300 1 0.32   # -10 dB
                           T=$((T + 1))
                         done
+fi
 echo "==> engine";      rm -rf "$HERE"/mars/obj "$HERE"/mars/obj_cart*     # the music switch is compiled into port/plat_mars.c
                         rm -f "$HERE/mars/hurrican32x.elf" "$HERE/mars/hurrican32x.bin" "$HERE/mars/OPENJAZZ.32X"
-                        make -C "$HERE/mars" EXTRA_DEFS="-DOJ32X_MUSIC=1" CART="$CART"
+                        make -C "$HERE/mars" EXTRA_DEFS="$MUSIC_DEFS" CART="$CART"
 [ -f "$HERE/mars/OPENJAZZ.32X" ] || { echo "*** mars/OPENJAZZ.32X was not made - stopping"; exit 1; }
 echo "==> ROM check";   python3 "$HERE/cd32x/ref/openlara/tools/prep_openlara_cd.py" "$HERE/mars/OPENJAZZ.32X" "$ROMS/OPENLARA.32X"
 echo "==> SH2 loader";  cd "$HERE/cd32x/sh2"    && make -f Makefile.cdloader clean && make -f Makefile.cdloader
