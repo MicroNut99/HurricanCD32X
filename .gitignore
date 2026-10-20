@@ -26,3 +26,7 @@ HurricanData/
 BG1/
 mars/obj_cart*/
 host/hurrican_p1_host_cart*
+mars/obj*/
+host/frame_*.ppm
+host/gen/
+host/hurrican_p1_host*
