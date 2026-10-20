@@ -84,6 +84,9 @@ extern int do_md_cmd3(int cmd, int arg1, int arg2, int arg3);
 #define MD_CMD_INSTALL_EXC    31         /* HW1: 68K exception trap (K29), prints 68K EXC in red */
 #define MD_CMD_SET_VDP_REG    34
 #define MD_CMD_START_D32XR    35         /* D32X M1: 68K -> D32XR's _start (never returns) */
+#define MD_CMD_COPY_VRAM      7          /* HUR genbg: (vram address, 68K source, words) */
+#define MD_CMD_SET_PAL        12         /* HUR genbg: (68K source, colour index, count) */
+#define MD_CMD_SET_SCROLL     36         /* HUR genbg: (h-scroll A, B, v-scroll A, B) */
 /* KOBO K19: hw_md.s set_vdp_reg - one VDP register word */
 
 /* KOBO K19 - GREEN DIAGNOSTIC TEXT.  1 = printed as before (C on the pad shows/hides it).
@@ -357,7 +360,10 @@ static int pcm_load(const char *name) {           /* OL-6: SFX<level>.BIN */
 static uint8_t bram_work[0x640];
 static uint8_t bram_str[16];
 static uint8_t bram_buf[BRAM_BYTES];
-static const char bram_name[12] = "OPENJAZZ_JJ";   /* OJ-J11: OpenJazz's own file (OL-5 had OPENLARA_TR) */
+static const char bram_name[12] = "HURRICAN_HS";   /* HUR P1y: Hurrican's own file (OJ-J11 had OPENJAZZ_JJ) */
+#define BRAM_FILE_BYTES 128             /* HUR P1y: the file is the buffer's first 128 bytes, 2 blocks
+                                           (as Kobo's) - a 4 KB file needs 64 of the backup RAM's
+                                           free blocks and was not written */
 static uint8_t bram_param[14];
 static int bram_ready = 0;
 
@@ -389,7 +395,7 @@ static int bram_save(void) {
     if (!bram_init()) return 0;
     for (i = 0; i < 11; i++) bram_param[i] = (uint8_t)bram_name[i];
     bram_param[11] = 0;                         /* normal (not protected) mode */
-    bram_param[12] = 0; bram_param[13] = BRAM_BYTES / 64;   /* blocks */
+    bram_param[12] = 0; bram_param[13] = BRAM_FILE_BYTES / 64;   /* blocks */
     return bram_call(4, bram_param, bram_buf) >= 0 ? 1 : 0;
 }
 
@@ -945,6 +951,58 @@ int main(void)
             sprintf(sfx_name, "SFX%02d.BIN", do_md_cmd1(MD_CMD_READ_32X_16, 0xA15122) & 0xFF);
             int nfx = pcm_load(sfx_name);
             do_md_cmd2(MD_CMD_WRITE_32X_16, 0xA1512C, nfx);
+            do_md_cmd2(MD_CMD_WRITE_32X_16, 0xA15120, 0);
+        }
+        else if (cmd == 62) {
+            /* HUR genbg - CMD 62 "Genesis background": COMM2 = 1 load + show, 0 hide, 2 scroll.
+               1: COMM8 (32 bits) = the cart offset of the stage pack's GENBG.BIN (tools/
+                  hur_convert.py: "GBG1", tiles, 16 colours, a 64x32 map, the tiles); the 68000
+                  reads it through the cart's 1 MB window (bank register 0xA15104 - the SH2 sees
+                  the whole cart regardless) into CRAM line 3, plane B (0xE000) and VRAM 0x1000 on;
+                  plane A (the diagnostics text) cleared, the display on.  Reply COMM12 1.
+               2: COMM8 = plane B's h-scroll (the SH2 sends it negated), COMM12 = its v-scroll.
+               0: the display off (as CMD 52 off). */
+            int sub = do_md_cmd1(MD_CMD_READ_32X_16, 0xA15122) & 3;
+            if (sub == 2) {
+                int hx = do_md_cmd1(MD_CMD_READ_32X_16, 0xA15128) & 0xFFFF;
+                int vy = do_md_cmd1(MD_CMD_READ_32X_16, 0xA1512C) & 0xFFFF;
+                do_md_cmd4(MD_CMD_SET_SCROLL, 0, hx, 0, vy);
+            } else if (sub == 1) {
+                uint32_t off = (uint32_t)do_md_cmd1(MD_CMD_READ_32X_32, 0xA15128);
+                int ok = 0;
+                do_md_cmd2(MD_CMD_WRITE_32X_16, 0xA15104, (int)(off >> 20) & 3);
+                uint32_t a = 0x900000 + (off & 0xFFFFF);
+                if (do_md_cmd1(MD_CMD_READ_32X_16, (int)a) == 0x4742 && do_md_cmd1(MD_CMD_READ_32X_16, (int)(a + 2)) == 0x4731) {
+                    int ntiles = do_md_cmd1(MD_CMD_READ_32X_16, (int)(a + 4)) & 0xFFFF;
+                    if (ntiles > 0 && ntiles <= 1216) {
+                        do_md_cmd1(MD_CMD_SET_VDP_REG, 0x8134);                  /* display off while loading */
+                        /* in pieces that never cross a 1 MB bank of the cart */
+                        uint32_t parts[3][3];                                    /* cart offset, vram, words */
+                        parts[0][0] = off + 8;    parts[0][1] = 0xFFFF;          parts[0][2] = 16;
+                        parts[1][0] = off + 40;   parts[1][1] = 0xE000;          parts[1][2] = 64 * 32;
+                        parts[2][0] = off + 4136; parts[2][1] = 0x1000;          parts[2][2] = (uint32_t)ntiles * 16;
+                        int p;
+                        for (p = 0; p < 3; p++) {
+                            uint32_t o = parts[p][0], v = parts[p][1], n = parts[p][2];
+                            while (n > 0) {
+                                uint32_t room = (0x100000 - (o & 0xFFFFF)) / 2, k = n > 2048 ? 2048 : n;
+                                if (k > room) k = room;
+                                do_md_cmd2(MD_CMD_WRITE_32X_16, 0xA15104, (int)(o >> 20) & 3);
+                                if (v == 0xFFFF) do_md_cmd3(MD_CMD_SET_PAL, (int)(0x900000 + (o & 0xFFFFF)), 48, (int)k);
+                                else { do_md_cmd3(MD_CMD_COPY_VRAM, (int)v, (int)(0x900000 + (o & 0xFFFFF)), (int)k); v += k * 2; }
+                                o += k * 2; n -= k;
+                            }
+                        }
+                        do_md_cmd0(MD_CMD_CLEAR_A);
+                        do_md_cmd4(MD_CMD_SET_SCROLL, 0, 0, 0, 0);
+                        do_md_cmd1(MD_CMD_SET_VDP_REG, 0x8174);                  /* display on */
+                        ok = 1;
+                    }
+                }
+                do_md_cmd2(MD_CMD_WRITE_32X_16, 0xA1512C, ok);
+            } else {
+                do_md_cmd1(MD_CMD_SET_VDP_REG, 0x8134);
+            }
             do_md_cmd2(MD_CMD_WRITE_32X_16, 0xA15120, 0);
         }
         else if (cmd == 52) {

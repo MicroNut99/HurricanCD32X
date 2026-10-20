@@ -280,6 +280,107 @@ Disc: `sega/HurricanP1c/HurricanP1c.cue`.
   TILEXT.BIN (tools/hur_convert.py), empty rows skipped, one layer without light copied straight
   from the tile. Frames the same as before (checked picture for picture on the PC).
 - Disc: `sega/HurricanP1q/HurricanP1q.cue`.
+
+## BG1 (branch genbg - a test of the Genesis background; changes the Sub-CPU program)
+- tools/hur_convert.py: GENBG.BIN in each stage pack from its far background (static_*.png):
+  256 x 224, 15 colours (Genesis 3-bit), 8x8 tiles deduplicated with mirroring (530-870 a
+  stage), a 64x32 plane map (palette line 3, tiles from VRAM 0x1000), the picture repeated
+  across the plane.
+- cd32x/subcpu/hw_md.s: Genesis command 36 set_scroll (H-scroll table 0xAC00, VSRAM 0/2), the
+  command table to 37. cd32x/subcpu/main.c: CMD 62 - 1 load (COMM8 32 bits = the cart offset;
+  the 68000 reads the cart through the 1 MB window, bank 0xA15104, into CRAM 48-63, plane B at
+  0xE000 and VRAM 0x1000; plane A cleared; display on; COMM12 = 1), 2 scroll (COMM8 h, COMM12
+  v), 0 display off.
+- game/p1.c genbg_*: loaded with the stage (display off before a pack is read: the loading
+  screen's black is see-through), colour 0 of the stage with the 32X's priority bit (the
+  Genesis shows through the empty sky), the far picture scrolled at a fifth each frame (one
+  CMD 62 a frame). PAUSE - BACKDROP ON / OFF.
+- Not checked on the PC (no Genesis there) and the 68000 code was not assembled here (no m68k
+  tools in this workspace): the first build on the user's PC assembles it.
+- Disc: `sega/HurricanBG1/HurricanBG1.cue`.
 - Everything stays in the title's folder: make_disc.sh puts the disc in HurricanCD32X/discs/<name>/,
   a test build is unpacked into a sub-folder of HurricanCD32X (e.g. BG1/) and uses the title's
   HurricanData/; the source zips go to HurricanCD32X/ itself.
+
+## P1r
+
+- BG1 with the Genesis backdrop off at start. On hardware the backdrop did not show right and cost
+  frames (the Sub-CPU scroll command waited every frame); with it off the frame rate is the best so
+  far (the P1q wall pass). PAUSE - BACKDROP still turns it on for testing; the scroll is now sent
+  only when it changes.
+- Disc: `discs/HurricanP1r/HurricanP1r.cue` in the title's folder.
+
+## P1s
+
+- Backdrop layering fixed. The P1r hardware photo showed the Genesis picture in front of every
+  32X colour except the sky: with the 32X's PRI bit clear the Genesis has priority, and colour
+  bit 15 brings a 32X colour forward (the opposite of what BG1 assumed). While the backdrop is on,
+  PRI is now set (the 32X in front) so bit 15 on colour 0 sends only the sky behind the Genesis;
+  BACKDROP OFF clears it again. Still off at start.
+- Disc: `discs/HurricanP1s/HurricanP1s.cue` in the title's folder.
+
+## P1t
+
+- Aiming diagonally up on the ground stops walking, as Hurrican (WalkLock: it has no running
+  picture with the gun raised; P1s slid the player along on the standing diagonal picture). The
+  recorded attract demos keep the walk they were recorded with (exact replay, checked) and show
+  the running picture then.
+- Genesis backdrop picture: its 15 colours put on the Genesis' real levels (P1s rounded up - too
+  bright and blotchy) and the picture spread over them with error diffusion: close to Hurrican's
+  dark far backgrounds.
+- Disc: `discs/HurricanP1t/HurricanP1t.cue` in the title's folder.
+
+## P1u
+
+- Genesis backdrop a step darker (tools/hur_convert.py GBG_DIM 0.7): less grain from the Genesis'
+  coarse colour levels, less detail. Still off at start (PAUSE - BACKDROP).
+- Tried and dropped (PC previews): three palette lines (45 colours) - barely better, the cave
+  worse; no error diffusion - colours shift (jungle teal, lava grey).
+- Disc: `discs/HurricanP1u/HurricanP1u.cue` in the title's folder.
+
+## P1v
+
+- Genesis backdrop with a colour fade built into the picture (tools/hur_convert.py _gbg_fade): the
+  stage's own hue bright at the top fading to a neighbouring hue, dark, at the bottom, laid over
+  the picture (GBG_FADE 0.35, picture at GBG_DIM 0.85). The backdrop does not scroll up and down,
+  so a fade in the picture looks the same as a raster one - no Genesis-side change (still GBG1,
+  15 colours on line 3). Three bands of palettes were tried and dropped (seams between bands).
+- Disc: `discs/HurricanP1v/HurricanP1v.cue` in the title's folder.
+
+## P1w
+
+- Stage 1's backdrop fade stays blue and is brighter (tools/hur_convert.py GBG_FADE_STAGE: each
+  far picture can have its own fade; P1v's neighbouring hue turned the jungle purple-pink and
+  nearly black). The others as P1v (stage 7 judged good on hardware).
+- Disc: `discs/HurricanP1w/HurricanP1w.cue` in the title's folder.
+
+## P1x
+
+- Stage 1's Genesis backdrop is stage 7's ice picture recoloured in shades of blue
+  (tools/hur_convert.py GBG_STAGE_PICTURE / _gbg_recolour: brightness on a navy-to-light-blue
+  ramp), with a blue fade. Stage 7 unchanged; the 32X's own sky colour (backdrop off) unchanged.
+- Disc: `discs/HurricanP1x/HurricanP1x.cue` in the title's folder.
+
+## P1y
+
+- High scores really saved to the Sega CD's backup RAM: the file is now Hurrican's own
+  ("HURRICAN_HS") and only 128 bytes - 2 blocks, as Kobo's high-score file (cd32x/subcpu/main.c
+  BRAM_FILE_BYTES; p1.c HS_WORD0 0). P1p wrote the whole 4 KB buffer (64 blocks, a size from the
+  OpenLara port) - more than the internal backup RAM had free, so the write failed.
+- If a save still fails, HIGH SCORES says "NOT SAVED: BACKUP RAM FULL?" (free space with the
+  Sega CD's own memory manager: start the console without a disc).
+- Disc: `discs/HurricanP1y/HurricanP1y.cue` in the title's folder.
+
+## P1z
+
+- The Genesis backdrop only in stages 1 and 7 (tools/hur_convert.py GBG_STAGES: the other packs
+  carry no GENBG.BIN - their walls cover the sky), on at start (p1.c genbg_want 1). PAUSE -
+  BACKDROP still turns it off and on; in the other stages it changes nothing.
+- Disc: `discs/HurricanP1z/HurricanP1z.cue` in the title's folder.
+
+## P2a
+
+- PAUSE - BACKDROP is remembered: bytes 94-95 of the high-score file ("B", 0/1; p1.c hs_pack /
+  hs_unpack), saved to the backup RAM when it is changed. No file yet: on.
+- Disc: `discs/HurricanP2a/HurricanP2a.cue` in the title's folder (after P1z; the old P2 zip of
+  10 Oct was an earlier, different build).

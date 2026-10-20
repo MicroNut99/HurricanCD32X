@@ -24,7 +24,7 @@
         .equ    MD_CMD_COPY_FROM_CART, 24
         .equ    MD_CMD_COPY_WORDS, 25
         .equ    MD_CMD_SAFE_CART_XFER, 26
-        .equ    MD_CMD_END, 36              /* KOBO K19: + set_vdp_reg (34); D32X M1: + start_d32xr (35) */
+        .equ    MD_CMD_END, 37              /* KOBO K19: + set_vdp_reg (34); D32X M1: + start_d32xr (35); HUR genbg: + set_scroll (36) */
 
 
         .text
@@ -285,6 +285,7 @@ cmd_table:
         .word   chilly_rv_memcpy - cmd_table    /* 33 */
         .word   set_vdp_reg - cmd_table         /* 34  KOBO K19 */
         .word   start_d32xr - cmd_table         /* 35  D32X M1 */
+        .word   set_scroll - cmd_table          /* 36  HUR genbg */
 
 | D32X M1: void start_d32xr(void) - never returns.
 | D32XR's ROM is in the RAM cart.  Interrupts off, cart bank 0, RV off (the SH2 must reach the
@@ -298,6 +299,25 @@ start_d32xr:
         move.w  #0,0xA15104             /* cart bank select = 0 */
         move.b  #0,0xA15107             /* RV off */
         jmp     0x880800
+
+| HUR genbg: void set_scroll(int hscroll_a, int hscroll_b, int vscroll_a, int vscroll_b);
+| The planes' scroll: the H-scroll table at VRAM 0xAC00 (register 13 = 0x2B, full-screen
+| scrolling: its first two words) and VSRAM 0 / 2.  Interrupts off meanwhile, so nothing comes
+| between the address and its data words.
+set_scroll:
+        move.w  sr,-(sp)
+        move.w  #0x2700,sr
+        lea     0xC00000,a1
+        move.w  #0x8F02,4(a1)
+        move.l  #0x6C000002,4(a1)       /* VRAM write 0xAC00 */
+        move.w  2+6(sp),(a1)            /* plane A (arguments 2 further: the saved SR) */
+        move.w  2+10(sp),(a1)           /* plane B */
+        move.l  #0x40000010,4(a1)       /* VSRAM write 0 */
+        move.w  2+14(sp),(a1)
+        move.w  2+18(sp),(a1)
+        move.w  (sp)+,sr
+        moveq   #0,d0
+        rts
 
 | KOBO K19: void set_vdp_reg(int word);
 | Writes one VDP register word (0x8Rvv) to the VDP control port.  Used to switch the

@@ -1,12 +1,12 @@
 #!/bin/bash
 # make_disc.sh - builds the Hurrican CD32X disc of the folder this script sits
-# in (tools/..), checks it, and copies the .bin / .cue to discs/ in the title's folder: discs/HurricanP1q/.
+# in (tools/..), checks it, and copies the .bin / .cue to discs/ in the title's folder: discs/HurricanP2a/.
 #   bash /mnt/s/KoboPort/sega-toolchain-12.1/sega/HurricanCD32X/tools/make_disc.sh
 # Hurrican's data: HURRICAN_DATA=<folder>, or HurricanData/ in the project folder, or taken
 # from Hurrican-master.zip in the project folder (unpacked into HurricanData/ once). Nothing is read from or written to the Windows Downloads folder.
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-NAME=HurricanP1q
+NAME=HurricanP2a
 # everything stays inside the title's folder: the disc goes to discs/<name>/ in it (a test
 # build unpacked into a sub-folder of HurricanCD32X puts its disc there too)
 TOP="$HERE"

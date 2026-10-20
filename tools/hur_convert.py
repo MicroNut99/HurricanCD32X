@@ -271,6 +271,129 @@ def sprite_file(entries):
 
 
 # ------------------------------------------------------------------ packs
+# ---------------------------------------------------------------- the Genesis background (genbg)
+GBG_W, GBG_H = 256, 224          # the picture on the plane: 32 x 28 tiles, repeated across 64
+GBG_TILE0 = 128                  # VRAM tile 128 (0x1000) on: the font stays below
+GBG_DIM = 0.85                   # the picture's brightness under the fade (P1u 0.7, P1v 0.85)
+
+
+GBG_LINES = 1                    # palette lines (bands of rows); 1: line 3 only, "GBG1" (P1v: three
+                                 # bands showed seams between them)
+GBG_FADE = 0.35                  # P1v: how much of the colour fade lies over the picture
+
+
+def _gbg_snap(pal):
+    """colours (0..255) on the Genesis' levels (0..7 a channel), each once"""
+    uniq = []
+    for c in map(tuple, np.clip(np.rint(np.asarray(pal, np.float64) / 36.43), 0, 7).astype(np.int32).tolist()):
+        if c not in uniq:
+            uniq.append(c)
+    return np.array(uniq, np.int32)
+
+
+# P1w: a stage's own fade - (bottom hue against the top's in turns, top brightness, bottom
+# brightness, how much lies over the picture); the default: a neighbouring hue. The jungle stays
+# blue and brighter (P1v's shift turned it purple-pink there, and it came out nearly black)
+GBG_FADE_DEFAULT = (0.08, 0.62, 0.08, GBG_FADE)
+GBG_FADE_STAGE = {"static_jungle": (-0.03, 0.95, 0.22, 0.55), "static_ice_blue": (0.0, 0.75, 0.10, GBG_FADE)}
+# P1x: a stage's backdrop from another far picture, recoloured - stage 1: stage 7's ice picture
+# in shades of blue (the jungle's own far picture is nearly black)
+GBG_STAGE_PICTURE = {1: ("static_ice.png", "blue")}
+# P1z: only these stages get a Genesis backdrop (the others' walls cover the sky anyway)
+GBG_STAGES = (1, 7)
+
+
+def _gbg_recolour(rgb, how):
+    """the picture's brightness on a ramp of one colour ("blue": navy to light blue)"""
+    a = rgb[:, :, :3].astype(np.float32) / 255.0
+    lum = (a @ np.array([0.3, 0.59, 0.11], np.float32))[:, :, None]
+    lo, hi = {"blue": ((0.02, 0.05, 0.20), (0.55, 0.78, 1.0))}[how]
+    out = np.array(lo, np.float32) * (1 - lum) + np.array(hi, np.float32) * lum
+    return np.concatenate([np.clip(out * 255 + 0.5, 0, 255).astype(np.uint8), rgb[:, :, 3:4]], 2)
+
+
+def _gbg_fade(im, name=""):
+    """P1v: the stage's own colour fading down the picture - its hue bright at the top, a
+    neighbouring hue dark at the bottom - laid over the (dimmed) picture"""
+    import colorsys
+    a = np.asarray(im, np.float32) / 255.0
+    m = a.reshape(-1, 3).mean(0)
+    h, sat, v = colorsys.rgb_to_hsv(*m)
+    if sat < 0.15:                                # a grey picture: the warmest of its colours
+        flat = a.reshape(-1, 3)
+        h = colorsys.rgb_to_hsv(*flat[np.argmax(flat[:, 0] - flat[:, 2])])[0]
+    shift, vtop, vbot, k = GBG_FADE_STAGE.get(name, GBG_FADE_DEFAULT)
+    top = np.array(colorsys.hsv_to_rgb(h, 0.75, vtop), np.float32)
+    bot = np.array(colorsys.hsv_to_rgb((h + shift) % 1.0, 0.85, vbot), np.float32)
+    t = np.linspace(0, 1, a.shape[0], dtype=np.float32)[:, None, None]
+    tint = top[None, None, :] * (1 - t) + bot[None, None, :] * t
+    out = a * (1 - k) + tint * k
+    return Image.fromarray(np.clip(out * 255 + 0.5, 0, 255).astype(np.uint8))
+
+
+def genesis_bg(rgb, name=""):
+    """GENBG.BIN from the stage's far background (an RGB array): the picture (a step darker, P1u)
+    under the stage's colour fade (P1v), in three bands of rows with 15 colours each (palette
+    lines 1-3, Genesis 3-bit levels), spread over them with error diffusion; 8x8 tiles
+    deduplicated (also mirrored), a 64x32 plane map.
+      "GBG2", u16 tiles, u16 lines (3), 48 x u16 CRAM words (lines 1-3, colour 0 unused),
+      64 x 32 u16 map, tiles x 32 bytes"""
+    im = Image.fromarray((rgb[:, :, :3].astype(np.float32) * GBG_DIM).astype(np.uint8)).resize((GBG_W, GBG_H), Image.LANCZOS)
+    im = _gbg_fade(im, name)
+    TY, TX = GBG_H // 8, GBG_W // 8
+    line_of = np.array([[min(ty * GBG_LINES // TY, GBG_LINES - 1)] * TX for ty in range(TY)], np.int32)
+    idx = np.zeros((GBG_H, GBG_W), np.uint8)
+    cram = []
+    for g in range(GBG_LINES):
+        rows = np.repeat(line_of[:, 0] == g, 8)
+        r0, r1 = np.nonzero(rows)[0][[0, -1]]
+        ext = np.asarray(im)[max(r0 - 12, 0):r1 + 13]     # the neighbours' edges too: no seam
+        q = Image.fromarray(ext).quantize(colors=15, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+        pl = _gbg_snap(np.array(q.getpalette()[:45]).reshape(-1, 3))
+        pimg = Image.new("P", (1, 1))
+        flat = [int(v * 36.43 + 0.5) for c in pl for v in c]
+        pimg.putpalette(flat + flat[:3] * (256 - len(pl)))
+        qq = np.minimum(np.array(im.quantize(palette=pimg, dither=Image.Dither.FLOYDSTEINBERG), np.uint8), len(pl) - 1) + 1
+        idx[rows] = qq[rows]
+        words = [0] + [int((b << 9) | (gg << 5) | (r << 1)) for r, gg, b in pl]
+        cram += words + [0] * (16 - len(words))
+    tiles, lookup, tmap = [], {}, np.zeros((GBG_H // 8, GBG_W // 8), np.int32)
+    for ty in range(GBG_H // 8):
+        for tx in range(GBG_W // 8):
+            t = idx[ty * 8:ty * 8 + 8, tx * 8:tx * 8 + 8]
+            key_line = int(line_of[ty, tx])
+            word = None
+            for hf in (0, 1):
+                for vf in (0, 1):
+                    v = t[:, ::-1] if hf else t
+                    v = v[::-1, :] if vf else v
+                    k = bytes([key_line]) + v.tobytes()
+                    if k in lookup:
+                        word = lookup[k] | (hf << 11) | (vf << 12)
+                        break
+                if word is not None:
+                    break
+            if word is None:
+                n = GBG_TILE0 + len(tiles)
+                tiles.append(t.copy())
+                lookup[bytes([key_line]) + t.tobytes()] = n
+                word = n
+            tmap[ty, tx] = word | ((4 - GBG_LINES + int(line_of[ty, tx])) << 13)
+    plane = np.zeros((32, 64), np.int32)
+    for r in range(32):
+        for c in range(64):
+            plane[r, c] = tmap[r % (GBG_H // 8), c % (GBG_W // 8)]
+    tbytes = bytearray()
+    for t in tiles:
+        for row in t:
+            for i in range(0, 8, 2):
+                tbytes.append(int(row[i]) << 4 | int(row[i + 1]))
+    out = (b"GBG1" + struct.pack(">HH", len(tiles), 0) if GBG_LINES == 1 else
+           b"GBG2" + struct.pack(">HH", len(tiles), GBG_LINES)) + b"".join(struct.pack(">H", w) for w in cram)
+    out += b"".join(struct.pack(">H", int(w)) for w in plane.flatten()) + bytes(tbytes)
+    return out, len(tiles)
+
+
 def write_pack(path, files, limit):
     """OJPK version 2 with files only (port/pack.h)"""
     n = len(files)
@@ -546,8 +669,19 @@ def stage_pack(data_dir, out_dir, stage, tex, res_palette, res_mapper_unused):
         struct.pack(">HhhhhH", oid & 0xFFFF, clamp(x), clamp(y), clamp(v1), clamp(v2), sk & 0xFFFF)
         for oid, x, y, v1, v2, sk in objs)
 
+    gbg = None
+    if stage not in GBG_STAGES:
+        pass
+    elif stage in GBG_STAGE_PICTURE and os.path.exists(os.path.join(tdir, GBG_STAGE_PICTURE[stage][0])):
+        pname, how = GBG_STAGE_PICTURE[stage]
+        rgb = _gbg_recolour(load_rgba(os.path.join(tdir, pname))[0], how)
+        gbg, gtiles = genesis_bg(rgb, pname.split(".")[0] + "_" + how)
+        print("  Genesis background: %s in %s, %d tiles (%d KB)" % (pname, how, gtiles, len(gbg) // 1024))
+    elif static:
+        gbg, gtiles = genesis_bg(sheets[static[0]], static[0].split(".")[0])
+        print("  Genesis background: %s, %d tiles (%d KB)" % (static[0], gtiles, len(gbg) // 1024))
     files = [("PALETTE.BIN", pal), ("TILES.BIN", tfile), ("TILEXT.BIN", xfile), ("MAP.BIN", mfile), ("SSPRITES.BIN", sfile),
-             ("OBJECTS.BIN", ofile), ("SHADE.LUT", shade.tobytes()), ("LIGHT.BIN", lfile)]
+             ("OBJECTS.BIN", ofile), ("SHADE.LUT", shade.tobytes()), ("LIGHT.BIN", lfile)] + ([("GENBG.BIN", gbg)] if gbg else [])
     out = os.path.join(out_dir, "OJ%03d.PAK" % stage)
     total = write_pack(out, files, STAGE_MAX)
     print("  stage %d (%s): %d KB - tiles %d (%d KB), map %dx%d: %d cells, %d blocks (%d KB), "

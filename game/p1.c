@@ -2227,9 +2227,12 @@ static void player_step(void)
 		if (held_l && !held_r) { pl.dir = -1; pl.xs = pl.in_liquid ? FX(-40) / 3 : FX(-20); }
 		if (held_r && !held_l) { pl.dir = 1; pl.xs = pl.in_liquid ? FX(40) / 3 : FX(20); }
 	}
-	/* aiming up: standing still, walking stops */
+	/* aiming up or diagonally up: standing still, walking stops (Hurrican's WalkLock - it has
+	   no running picture with the gun raised; P1s let the player slide along on the diagonal one) */
 	pl.aim = held_u ? ((held_l || held_r) ? 1 : 2) : 0;
-	if (pl.aim == 2 && pl.state != PS_JUMP) pl.xs = 0;
+	if (pl.aim != 0 && pl.state != PS_JUMP && (pl.aim == 2 || demo_rec < 0)) pl.xs = 0;
+	/* (the recorded attract demos keep the walk they were recorded with, so they replay exactly;
+	   moving like that they show the running picture) */
 
 	/* ducking */
 	if (pl.state != PS_JUMP && held_d && !held_u) { pl.state = PS_DUCK; pl.xs = 0; pl.aim = 0; }
@@ -2811,6 +2814,7 @@ static void draw_player(uint32_t t)
 	if (pl.state == PS_DUCK) { p = &P_crouch; f = 0; }
 	else if (pl.state == PS_JUMP) p = pl.aim == 2 ? &P_jumpup : pl.aim == 1 ? &P_jumpdiag : &P_jump;
 	else if (pl.aim == 2) { p = &P_shootup; f = 0; }
+	else if (pl.aim == 1 && pl.state == PS_RUN) p = &P_run;   /* only in the attract demos (see the walk lock) */
 	else if (pl.aim == 1) { p = &P_shootdiag; f = 0; }
 	else if (pl.state == PS_RUN) p = &P_run;
 	else p = &P_idle;
@@ -3030,6 +3034,9 @@ static void load_resident(void)
 /* stage n's pack from the disc (the platform shows the loading screen meanwhile). The CD
  * plays no music while it reads data (Kobo rule): the music stops first. */
 static int stage_in_cart;          /* the stage whose pack is in the RAM cart (0 = none yet) */
+static void genbg_off(void);
+static void genbg_load(void);
+static void genbg_scroll(void);
 static void load_stage(int n)
 {
 	/* the pack of the stage loaded last is still in the cart (the SH2 only reads it): playing
@@ -3038,6 +3045,7 @@ static void load_stage(int n)
 	if (n != stage_in_cart)
 	{
 		stage_in_cart = 0;
+		genbg_off();                    /* the loading screen's black is see-through */
 		plat_music(0);
 		len = plat_load_pack(PACK_LEVEL_ID0 + n, STAGE_CART, STAGE_MAX);
 	}
@@ -3074,8 +3082,72 @@ static void load_stage(int n)
 	shade = need("SHADE.LUT");
 	load_pictures();
 	kinds_init();
+	genbg_load();                       /* the stage's far background on the Genesis (genbg) */
 }
 
+
+
+/* ------------------------------------------------------------------ the Genesis background (genbg)
+ * The stage's far background (GENBG.BIN, tools/hur_convert.py) on the Genesis' plane B behind
+ * the 32X picture: the Sub-CPU's CMD 62 (cd32x/subcpu/main.c) loads it from the cart and sets
+ * its scroll; colour 0 of the stage (the empty sky) gets the 32X's priority bit, so the Genesis
+ * shows through there. PAUSE - BACKDROP ON / OFF. The PC draws no Genesis plane. */
+static int genbg_on, genbg_want = 1;     /* P1z: on at start; only stages 1 and 7 have one (tools/hur_convert.py
+                                            GBG_STAGES) - elsewhere PAUSE - BACKDROP changes nothing */
+static int genbg_last = -1;
+#ifdef OJ32X_MARS
+#define GB_COMM0  (*(volatile uint16_t *)0x20004020)
+#define GB_COMM2  (*(volatile uint16_t *)0x20004022)
+#define GB_COMM8  (*(volatile uint16_t *)0x20004028)
+#define GB_COMM8L (*(volatile uint32_t *)0x20004028)
+#define GB_COMM12 (*(volatile uint16_t *)0x2000402C)
+#define GB_DISPMODE (*(volatile uint16_t *)0x20004100)
+/* P1s: the 32X's PRI bit. Clear (as the game runs) the Genesis is in front wherever its pixel
+   is not see-through and the colour bit 15 brings a 32X colour forward - the backdrop then
+   covered the whole stage (P1r photo: only the sky was the 32X's). Set while the backdrop is
+   on: the 32X is in front and bit 15 on colour 0 sends just the sky behind the Genesis. */
+#define GB_PRI    0x0080
+static int genbg_cmd(int sub)
+{
+	GB_COMM2 = (uint16_t)sub;
+	GB_COMM0 = 62;
+	for (uint32_t n = 0; n < 8000000u && GB_COMM0 != 0; n++) { }
+	return GB_COMM0 == 0;
+}
+static void genbg_off(void)
+{
+	if (!genbg_on) return;
+	genbg_cmd(0);
+	genbg_on = 0;
+	palette[0] &= 0x7FFF;
+	GB_DISPMODE = (uint16_t)(GB_DISPMODE & ~GB_PRI);
+}
+static void genbg_load(void)
+{
+	const uint8_t *g;
+	uint32_t size;
+	genbg_on = 0;
+	if (!genbg_want || !pack_file("GENBG.BIN", &g, &size)) return;
+	GB_COMM8L = (uint32_t)(g - plat_cart_ptr(0));
+	GB_COMM12 = 0;
+	genbg_last = -1;
+	if (genbg_cmd(1) && GB_COMM12 == 1) { genbg_on = 1; palette[0] |= 0x8000; GB_DISPMODE = (uint16_t)(GB_DISPMODE | GB_PRI); }
+}
+static void genbg_scroll(void)
+{
+	if (!genbg_on) return;
+	const int v = -(draw_cx / 5);                    /* Hurrican: the far picture at a fifth */
+	if (v == genbg_last) return;                     /* P1r: the Sub-CPU only when it moved */
+	genbg_last = v;
+	GB_COMM8 = (uint16_t)v;
+	GB_COMM12 = 0;
+	genbg_cmd(2);
+}
+#else
+static void genbg_off(void) { genbg_on = 0; }
+static void genbg_load(void) { genbg_on = 0; }
+static void genbg_scroll(void) { }
+#endif
 
 /* ------------------------------------------------------------------ the high scores (P1p)
  * Hurrican's table of the best ten (name, score, stage reached), kept in the Sega CD's backup
@@ -3083,7 +3155,10 @@ static void load_stage(int n)
  * 4 KB buffer, 59 save - no change to it), our 128 bytes at its end (byte 3968, "HSC1"). On the
  * PC: HB_DIR/HISCORE.BIN. */
 #define HS_N 10
-#define HS_WORD0 1984                    /* 3968 / 2 */
+#define HS_WORD0 0                       /* P1y: the start of the Sub-CPU's buffer - its file is now
+                                            only our 128 bytes ("HURRICAN_HS", 2 blocks); P1p's
+                                            4 KB file needed 64 free blocks and was not written */
+static int hs_status;                    /* P1y: the last save - 1 written, -1 failed, 0 none yet */
 typedef struct { char name[4]; uint32_t score; uint8_t stage; } HiScore;
 static HiScore hs[HS_N];
 static int hs_new = -1;                  /* the row just entered (shown in yellow) */
@@ -3108,6 +3183,7 @@ static void hs_unpack(const uint8_t *b)
 		hs[i].score = (uint32_t)r[3] << 24 | (uint32_t)r[4] << 16 | (uint32_t)r[5] << 8 | r[6];
 		hs[i].stage = r[7];
 	}
+	if (b[94] == 'B') genbg_want = b[95] & 1;     /* P1z: PAUSE - BACKDROP, remembered */
 }
 static void hs_pack(uint8_t *b)
 {
@@ -3121,6 +3197,7 @@ static void hs_pack(uint8_t *b)
 		r[5] = (uint8_t)(hs[i].score >> 8); r[6] = (uint8_t)hs[i].score;
 		r[7] = hs[i].stage;
 	}
+	b[94] = 'B'; b[95] = (uint8_t)genbg_want;     /* P1z: the backdrop setting (bytes 94-95) */
 }
 #ifdef OJ32X_MARS
 #define HS_COMM0  (*(volatile uint16_t *)0x20004020)
@@ -3158,7 +3235,7 @@ static void hs_save(void)
 		if (!hs_cmd(58)) return;
 	}
 	HS_COMM12 = 0;
-	hs_cmd(59);                                      /* the buffer back into the backup RAM file */
+	hs_status = hs_cmd(59) && HS_COMM12 == 1 ? 1 : -1;   /* the buffer back into the backup RAM file */
 }
 #else
 static void hs_load(void)
@@ -3248,6 +3325,7 @@ static void menu_draw(uint32_t frame)
 			put_dec(q, hs[i].stage, 1);
 			hud_text(SCREEN_W / 2 - 108, 50 + 14 * i, t, i == hs_new ? col_yellow : col_light);
 		}
+		if (hs_status < 0) hud_text(SCREEN_W / 2 - 112, 196, "NOT SAVED: BACKUP RAM FULL?", col_yellow);
 	}
 	else if (menu_page == 4)
 	{
@@ -3652,8 +3730,8 @@ int main(int argc, char *argv[])
 		else if (gs == GS_PAUSE)
 		{
 			/* the pause menu: CONTINUE / MAIN MENU / TIMING ON-OFF */
-			if (hit & PAD_UP) pause_sel = (pause_sel + 3) % 4;
-			if (hit & PAD_DOWN) pause_sel = (pause_sel + 1) % 4;
+			if (hit & PAD_UP) pause_sel = (pause_sel + 4) % 5;
+			if (hit & PAD_DOWN) pause_sel = (pause_sel + 1) % 5;
 			if ((hit & PAD_START) || ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 0)) gs = GS_PLAY;
 			else if ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 1)
 			{
@@ -3664,6 +3742,7 @@ int main(int argc, char *argv[])
 			}
 			else if ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 2) show_times ^= 1;
 			else if ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 3) par_on ^= 1;
+			else if ((hit & (PAD_B | PAD_C | PAD_A)) && pause_sel == 4) { genbg_want ^= 1; if (genbg_want) genbg_load(); else genbg_off(); hs_save(); }   /* remembered in the backup RAM file */
 		}
 
 		if (gs == GS_STORY)
@@ -3841,6 +3920,8 @@ int main(int argc, char *argv[])
 			         pause_sel == 2 ? col_yellow : col_light);
 			hud_text(SCREEN_W / 2 - 52, 140, par_on ? (pause_sel == 3 ? "> 2ND CPU ON" : "  2ND CPU ON") : (pause_sel == 3 ? "> 2ND CPU OFF" : "  2ND CPU OFF"),
 			         pause_sel == 3 ? col_yellow : col_light);
+			hud_text(SCREEN_W / 2 - 52, 156, genbg_want ? (pause_sel == 4 ? "> BACKDROP ON" : "  BACKDROP ON") : (pause_sel == 4 ? "> BACKDROP OFF" : "  BACKDROP OFF"),
+			         pause_sel == 4 ? col_yellow : col_light);
 		}
 		if (gs == GS_CLEAR) hud_text(SCREEN_W / 2 - 48, 84, "STAGE CLEAR", col_light);
 		if (gs == GS_OVER) hud_text(SCREEN_W / 2 - 36, 84, "GAME OVER", col_light);
@@ -3902,6 +3983,7 @@ int main(int argc, char *argv[])
 #endif
 		plat_border_colour(0);
 		plat_present_scroll(palette, (int)((draw_cy + draw_cx / RING_W) % VIEW_H), draw_cx % RING_W, VIEW_H);
+		genbg_scroll();
 		t1 = plat_prof_us(); tacc[T_HUD] += t1 - t0;
 		frame++;
 	}
