@@ -1,15 +1,15 @@
 #!/bin/bash
 # make_disc.sh - builds the Hurrican CD32X disc of the folder this script sits
-# in (tools/..), checks it, and copies the .bin / .cue to discs/ in the title's folder: discs/HurricanP2a/.
+# in (tools/..), checks it, and copies the .bin / .cue to discs/ in the title's folder: discs/HurricanP2b/.
 #   bash /mnt/s/KoboPort/sega-toolchain-12.1/sega/HurricanCD32X/tools/make_disc.sh
 # Hurrican's data: HURRICAN_DATA=<folder>, or HurricanData/ in the project folder, or taken
 # from Hurrican-master.zip in the project folder (unpacked into HurricanData/ once). Nothing is read from or written to the Windows Downloads folder.
 set -u
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-NAME=HurricanP2a
-# CART=8 / CART=16: the 8 / 16 MB cart test builds (docs/CART_8MB_16MB.md): HurricanP2a-8MB / -16MB
+NAME=HurricanP2b
+# CART=8 / CART=16: the 8 / 16 MB cart test builds (docs/CART_8MB_16MB.md): HurricanP2b-8MB / -16MB
 case "${CART:-}" in ""|8|16) ;; *) echo "CART must be 8 or 16 (or unset)"; exit 1;; esac
-[ -n "${CART:-}" ] && NAME="HurricanP2a-${CART}MB"
+[ -n "${CART:-}" ] && NAME="HurricanP2b-${CART}MB"
 [ -n "${NOMUSIC:-}" ] && export NOMUSIC
 export CART="${CART:-}" DISC_NAME="$NAME"
 # everything stays inside the title's folder: the disc goes to discs/<name>/ in it (a test
