@@ -28,6 +28,8 @@
 
 #include "mars/font3x5.h"
 
+static int fill_running;   /* FILL: the boot's copying shows the splash, not the loading screen */
+
 /* ------------------------------------------------------------ registers */
 #define MARS_ADAPTER_B   (*(volatile uint8_t  *)0x20004000)
 #define MARS_INTMSK      (*(volatile uint16_t *)0x20004000)
@@ -457,6 +459,37 @@ static void pack_load(void)
 		plat_log("PACK: COPIED BUT NOT A PACK (OJPK)");
 }
 
+#if OJ32X_CART_MB
+#include "cartcache.h"
+/* P2b - FILL: on the boot, the packs that are not in the cart yet are copied into its free pages
+ * (cartcache_fill), so the first boot fills the 16 MB cart and later ones load nothing. Start
+ * stops it (the rest load when they are played, as before). */
+static int fill_progress(int done, int total)
+{
+	for (int i = 0; i < 2; i++)
+	{
+		splash_text(28, 150, "COPYING TO THE CART - START: SKIP");
+		splash_bar((uint32_t)done, (uint32_t)total);
+		flip_wait();
+	}
+	return (plat_read_pad() & PAD_START) != 0;
+}
+static void cart_fill(void)
+{
+	fill_running = 1;
+	/* stages 1-9, then the story (OJ010.PAK) */
+	int ids[10];
+	for (int i = 0; i < 10; i++) ids[i] = PACK_LEVEL_ID0 + 1 + i;
+	cartcache_fill(ids, 0, 10, fill_progress);
+	fill_running = 0;
+	for (int i = 0; i < 2; i++)
+	{
+		splash_text(28, 150, "                                 ");
+		flip_wait();
+	}
+}
+#endif
+
 void plat_mars_entry(void)
 {
 	/* Tyrian's start-up minus the 68000 handshake (see the top of this file). */
@@ -495,6 +528,9 @@ void plat_mars_entry(void)
 	plat_log("PACK LOADING");
 	pack_load();   /* J18d: always Jazz CD's common pack - Holiday Hare '95 is an episode */
 	sfx_load();
+#if OJ32X_CART_MB
+	cart_fill();   /* P2b: the 16 MB cart filled on the first boot */
+#endif
 	if (OJ32X_SPLASH)
 		while (vblank_count - splash_from < OJ32X_SPLASH_HOLD) { }
 	set_genesis_text(0);
@@ -1086,6 +1122,7 @@ static void give_fb(void)
 
 static void loading_screen(void)
 {
+	if (fill_running) return;
 	MARS_COMM2 = 0;
 	if (!send_cmd(CMD_OPEN_FILE, 2000000UL)) return;
 	uint32_t len = MARS_COMM8_32;
