@@ -30,3 +30,12 @@ mars/obj*/
 host/frame_*.ppm
 host/gen/
 host/hurrican_p1_host*
+
+# build output of the SH2 loader and the Sub-CPU program
+cd32x/sh2/*.o
+cd32x/sh2/*.elf
+cd32x/sh2/*.map
+cd32x/sh2/CDLOADER.32x
+cd32x/subcpu/*.o
+cd32x/subcpu/*.elf
+cd32x/subcpu/output.map
