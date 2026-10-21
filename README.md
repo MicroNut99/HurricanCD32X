@@ -35,7 +35,7 @@ Full instructions: `docs/HURRICAN_CD32X_HANDOFF.md`. In short:
 2. `cd HurricanCD32X && bash tools/make_disc.sh`
 3. **Burn `HurricanCD32X/discs/<name>/<name>.cue`** (with its `.bin`). The build prints the
    exact path when it finishes. The `.iso` alone has no music.
-4. For the 16 MB cart: `CART=16 bash tools/make_disc.sh` (disc `discs/HurricanP2a-16MB/`;
+4. For the 16 MB cart: `CART=16 bash tools/make_disc.sh` (disc `discs/HurricanP2a2-16MB/`;
    `CART=8` for the 8 MB cart).
 
 ## Starting the game

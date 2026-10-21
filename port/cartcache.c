@@ -234,7 +234,6 @@ int cartcache_fill(const int *ids, const int *gb_ids, int n, int (*progress)(int
 	if (cartcache_pages() <= 2) return 0;
 	int copied = 0;
 	for (int i = 0; i < n; i++) {
-		if (progress && progress(i, n)) break;
 		int there = 0;
 		for (int p = 2; p < pages && !there; p++) there = find(p, ids[i]) != NULL;
 		if (there) continue;
@@ -247,6 +246,8 @@ int cartcache_fill(const int *ids, const int *gb_ids, int n, int (*progress)(int
 		for (int p = 2; p < pages && best < 0; p++)
 			if (PAGE_ROOM - pg[p].used >= need && pg[p].n + 2 <= MAX_ENTRIES) best = p;
 		if (best < 0) break;                        /* full: the rest load when they are played */
+		/* the copying screen only for a pack that is copied: a later boot shows nothing */
+		if (progress && progress(i, n)) break;
 		plat_cart_page(best);
 		const int first = pg[best].n;
 		const uint32_t at = pg[best].used;

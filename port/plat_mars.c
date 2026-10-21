@@ -464,8 +464,10 @@ static void pack_load(void)
 /* P2b - FILL: on the boot, the packs that are not in the cart yet are copied into its free pages
  * (cartcache_fill), so the first boot fills the 16 MB cart and later ones load nothing. Start
  * stops it (the rest load when they are played, as before). */
+static int fill_shown;   /* the copying text is on the splash */
 static int fill_progress(int done, int total)
 {
+	fill_shown = 1;
 	for (int i = 0; i < 2; i++)
 	{
 		splash_text(28, 150, "COPYING TO THE CART - START: SKIP");
@@ -482,7 +484,7 @@ static void cart_fill(void)
 	for (int i = 0; i < 10; i++) ids[i] = PACK_LEVEL_ID0 + 1 + i;
 	cartcache_fill(ids, 0, 10, fill_progress);
 	fill_running = 0;
-	for (int i = 0; i < 2; i++)
+	for (int i = 0; i < 2 && fill_shown; i++)
 	{
 		splash_text(28, 150, "                                 ");
 		flip_wait();
