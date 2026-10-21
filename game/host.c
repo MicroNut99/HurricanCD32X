@@ -210,8 +210,6 @@ void plat_wait_flip(void) { }
 void plat_border_colour(int index) { border = index & 255; }
 /* game time: HB_MS per frame (default 66: a 15 fps console) */
 uint32_t plat_ticks_ms(void) { return ticks; }
-uint32_t plat_frame_ms(void) { return ticks; }
-void plat_comm_settle(void) { }
 
 uint32_t plat_prof_us(void)
 {

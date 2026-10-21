@@ -28,23 +28,14 @@
 
 #include "mars/font3x5.h"
 
-static int fill_running;   /* FILL: the boot's copying shows the splash, not the loading screen */
-
 /* ------------------------------------------------------------ registers */
 #define MARS_ADAPTER_B   (*(volatile uint8_t  *)0x20004000)
 #define MARS_INTMSK      (*(volatile uint16_t *)0x20004000)
 #define MARS_CMD_CLR     (*(volatile uint16_t *)0x2000401A)
 #define MARS_COMM0       (*(volatile uint16_t *)0x20004020)
 #define MARS_COMM2       (*(volatile uint16_t *)0x20004022)
-/* P2b: COMM8 / COMM10 carry the answer to a pad request sent ahead (pad_ask): every other use
- * waits for that answer first, so it cannot land on an argument written here or be read as a
- * result (the RAW_ names are for the pad's own answer) */
-#define RAW_COMM8        (*(volatile uint16_t *)0x20004028)
-static void pad_collect(uint32_t tries);
-static inline volatile uint16_t *comm16_settled(uintptr_t a) { pad_collect(40000UL); return (volatile uint16_t *)a; }
-static inline volatile uint32_t *comm32_settled(uintptr_t a) { pad_collect(40000UL); return (volatile uint32_t *)a; }
-#define MARS_COMM8       (*comm16_settled(0x20004028))
-#define MARS_COMM10      (*comm16_settled(0x2000402A))
+#define MARS_COMM8       (*(volatile uint16_t *)0x20004028)
+#define MARS_COMM10      (*(volatile uint16_t *)0x2000402A)
 #define MARS_COMM12      (*(volatile uint16_t *)0x2000402C)
 #define VDP_DISPMODE     (*(volatile uint16_t *)0x20004100)
 #define VDP_FBCTL        (*(volatile uint16_t *)0x2000410A)
@@ -112,7 +103,7 @@ static inline volatile uint32_t *comm32_settled(uintptr_t a) { pad_collect(40000
 #define PACK_SLOT        8       /* IMAGE8.RAW -> cart 8 * 128 KB = 0x100000 = PLAT_CART_DATA_OFFSET */
 #define CMD_CHUNK_TO_FB  51
 #define CMD_LOAD_SFX     53      /* main.c: SFX<COMM2>.BIN -> PCM chip; COMM12 = number of effects */      /* main.c: file chunk -> frame buffer (the loader's splash) */
-#define MARS_COMM8_32    (*comm32_settled(0x20004028))
+#define MARS_COMM8_32    (*(volatile uint32_t *)0x20004028)
 #define CMD_TEXT_ONOFF   52
 
 #define PPHI_HZ          23011364u
@@ -165,21 +156,11 @@ int plat_slave_draws_on(void) { return OJ32X_SLAVE_DRAWS && slave_draws_now; }
 static SlaveJob slave_job;
 #define JOB ((volatile SlaveJob *)((uintptr_t)&slave_job | 0x20000000u))
 
-/* P2b: a wait that stays off the bus. The two SH2s share one bus (SDRAM, cart, frame buffer,
- * 32X registers): an SH2 spinning on a cache-through address or a 32X register keeps the bus
- * busy almost all the time, and every cart, SDRAM and frame buffer access of the other SH2
- * waits for it. Between two looks at what it waits for, a busy-wait now runs this loop: a
- * few registers and the cache, nothing on the bus (about 3 clocks a turn). */
-static inline void bus_rest(int turns)
-{
-	for (int k = turns; k > 0; k--) __asm__ __volatile__("" ::: "memory");
-}
-
 void secondary(void)
 {
 	for (;;)
 	{
-		while (!JOB->go) bus_rest(64);   /* P2b: was a tight loop on SDRAM: the master's bus */
+		while (!JOB->go) { }
 		JOB->go = 0;
 		*(volatile uint8_t *)0xFFFFFE92 = 0x11;   /* purge + enable the slave's cache */
 		JOB->fn(JOB->arg, 1);
@@ -200,7 +181,7 @@ void plat_parallel(void (*fn)(void *, int), void *arg)
 	JOB->done = 0;
 	JOB->go = 1;
 	fn(arg, 0);
-	while (!JOB->done) bus_rest(32);
+	while (!JOB->done) { }
 }
 
 /* ------------------------------------------------------------ helpers */
@@ -208,57 +189,22 @@ static void set_sr(uint32_t sr) { __asm__ __volatile__("ldc %0,sr" : : "r"(sr) :
 
 static void comm_pause(void)
 {
-	bus_rest(128);  /* P2b: was a volatile counter on the stack: a write to SDRAM every turn */
+	volatile int k;
+	for (k = 0; k < 64; k++) { }
 }
 
 static int send_cmd(uint16_t cmd, uint32_t tries)
 {
-	pad_collect(40000UL);   /* P2b: a pad request sent ahead must be answered first */
 	MARS_COMM0 = cmd;
 	for (uint32_t n = 0; n < tries && MARS_COMM0 != 0; n++)
 		comm_pause();
 	return MARS_COMM0 == 0;
 }
 
-/* P2b: the pad request goes out before the frame's idle wait (frame pacing, the swap) and is
- * read at the next frame's pad poll, so the SH2 no longer sits through the Sub-CPU / 68000 round
- * trip (main.c CMD 48) in the middle of each frame. The pad is read at the end of the frame, as
- * fresh as before. A waiting sound effect rides on it (main.c K33: COMM0 = 48 | n << 8). */
-static volatile uint16_t sfx_pending;
-static int pad_asked;
-static uint16_t pad_value;
-
-static void pad_take(void)
-{
-	const uint16_t bits = RAW_COMM8;
-	pad_value = (bits & 0xF000) == 0xF000 ? 0 : (uint16_t)(bits & 0x0FFF);
-}
-
-static void pad_ask(void)
-{
-	if (pad_asked || MARS_COMM0 != 0) return;
-	const uint16_t fx = sfx_pending;
-	sfx_pending = 0;
-	MARS_COMM0 = (uint16_t)(CMD_GET_PAD | (fx << 8));
-	pad_asked = 1;
-}
-
-static void pad_collect(uint32_t tries)
-{
-	if (!pad_asked) return;
-	pad_asked = 0;
-	for (uint32_t n = 0; n < tries && MARS_COMM0 != 0; n++)
-		comm_pause();
-	if (MARS_COMM0 == 0) pad_take();
-}
-
-/* P2b: for code that writes the 32X communication registers itself */
-void plat_comm_settle(void) { pad_collect(40000UL); }
-
 static void take_fb(void)
 {
 	MARS_ADAPTER_B = 0x80;
-	while ((MARS_INTMSK & 0x8000) == 0) bus_rest(8);
+	while ((MARS_INTMSK & 0x8000) == 0) { }
 }
 
 static void flip_wait(void)
@@ -270,7 +216,7 @@ static void flip_wait(void)
 	plat_wait_flip();
 	uint16_t cur = VDP_FBCTL & FBCTL_FS;
 	VDP_FBCTL = cur ^ FBCTL_FS;
-	while ((VDP_FBCTL & FBCTL_FS) == cur) bus_rest(8);
+	while ((VDP_FBCTL & FBCTL_FS) == cur) { }
 }
 
 static void set_genesis_text(int on)
@@ -511,37 +457,6 @@ static void pack_load(void)
 		plat_log("PACK: COPIED BUT NOT A PACK (OJPK)");
 }
 
-#if OJ32X_CART_MB
-#include "cartcache.h"
-/* P2b - FILL: on the boot, the packs that are not in the cart yet are copied into its free pages
- * (cartcache_fill), so the first boot fills the 16 MB cart and later ones load nothing. Start
- * stops it (the rest load when they are played, as before). */
-static int fill_progress(int done, int total)
-{
-	for (int i = 0; i < 2; i++)
-	{
-		splash_text(28, 150, "COPYING TO THE CART - START: SKIP");
-		splash_bar((uint32_t)done, (uint32_t)total);
-		flip_wait();
-	}
-	return (plat_read_pad() & PAD_START) != 0;
-}
-static void cart_fill(void)
-{
-	fill_running = 1;
-	/* stages 1-9, then the story (OJ010.PAK) */
-	int ids[10];
-	for (int i = 0; i < 10; i++) ids[i] = PACK_LEVEL_ID0 + 1 + i;
-	cartcache_fill(ids, 0, 10, fill_progress);
-	fill_running = 0;
-	for (int i = 0; i < 2; i++)
-	{
-		splash_text(28, 150, "                                 ");
-		flip_wait();
-	}
-}
-#endif
-
 void plat_mars_entry(void)
 {
 	/* Tyrian's start-up minus the 68000 handshake (see the top of this file). */
@@ -580,9 +495,6 @@ void plat_mars_entry(void)
 	plat_log("PACK LOADING");
 	pack_load();   /* J18d: always Jazz CD's common pack - Holiday Hare '95 is an episode */
 	sfx_load();
-#if OJ32X_CART_MB
-	cart_fill();   /* P2b: the 16 MB cart filled on the first boot */
-#endif
 	if (OJ32X_SPLASH)
 		while (vblank_count - splash_from < OJ32X_SPLASH_HOLD) { }
 	set_genesis_text(0);
@@ -655,6 +567,7 @@ uint32_t plat_random_seed(void)
 
 /* ------------------------------------------------------------------ pad */
 /* J10: sound effects on the Sega CD's PCM chip (SFX00.BIN, loaded at boot by CMD 53) */
+static volatile uint16_t sfx_pending;
 
 void plat_sfx(int id)
 {
@@ -692,11 +605,6 @@ uint16_t plat_read_pad(void)
 	static uint32_t last_ms = 0xFFFFFFFFu;
 
 	uint32_t now = plat_ticks_ms();
-	if (pad_asked) {                 /* P2b: asked at the end of the last frame */
-		pad_collect(40000UL);
-		last_ms = now;
-		return pad = pad_value;
-	}
 	if (last_ms != 0xFFFFFFFFu && now - last_ms < 4)
 		return pad;
 	last_ms = now;
@@ -746,20 +654,7 @@ static void pace_before_flip(void)
 		pace_n = n > 0 ? n : 1;
 		while (vblank_count - last_flip_vblank < (uint32_t)(pace_n - 1)) { }
 	}
-	while (VDP_FBCTL & FBCTL_VBLK) bus_rest(8);
-}
-
-/* P2b (as OpenJazz J24): the time this frame will be shown - the vblank of the swap the frame
- * pacing allows (pace_n vblanks after the last one), or the next vblank when that is past */
-uint32_t plat_frame_ms(void)
-{
-	static uint32_t last;
-	uint32_t v = last_flip_vblank + (uint32_t)pace_n;
-	if (v < vblank_count + 1) v = vblank_count + 1;
-	uint32_t ms = (uint32_t)((uint64_t)v * 1000u / 60u);
-	if (ms < last) ms = last;
-	last = ms;
-	return ms;
+	while (VDP_FBCTL & FBCTL_VBLK) { }
 }
 
 /* -------------------------------------------------------------- display */
@@ -777,7 +672,7 @@ static void present_finish(volatile uint32_t *blank_line, const uint16_t *palett
 	pace_before_flip();
 	flip_wait();
 	last_flip_vblank = vblank_count;
-	while ((VDP_FBCTL & FBCTL_PEN) == 0) bus_rest(8);
+	while ((VDP_FBCTL & FBCTL_PEN) == 0) { }
 	for (int i = 0; i < 256; ++i)
 		/* J13e: 0x0000 is see-through on the 32X (Kobo rule 5): black in the game's palettes let
 		 * the Genesis layer show (the strip at the right edge of menus and levels) */
@@ -846,7 +741,6 @@ void plat_present_scroll(const uint16_t *palette555, int row0, int xoff, int vie
 		volatile uint32_t *blank = FB32 + SCROLL_BLANK_OFF / 4;
 		for (int x = 0; x < PLAT_SCREEN_W / 4; ++x) blank[x] = border_fill;
 		for (int i = 0; i < 256; ++i) pending_pal[i] = palette555[i] ? palette555[i] : 0x0400;
-		pad_ask();                        /* P2b: answered while this SH2 waits below */
 		pace_before_flip();               /* J16b: even frame times (median), then out of vblank */
 		const uint16_t cur = VDP_FBCTL & FBCTL_FS;
 		flip_target = cur ^ FBCTL_FS;
@@ -864,10 +758,10 @@ void plat_present_scroll(const uint16_t *palette555, int row0, int xoff, int vie
 void plat_wait_flip(void)
 {
 	if (!flip_pending) return;
-	while ((VDP_FBCTL & FBCTL_FS) != flip_target) bus_rest(8);
+	while ((VDP_FBCTL & FBCTL_FS) != flip_target) { }
 	if (pal_pending)                       /* the vblank handler did not get to it */
 	{
-		while ((VDP_FBCTL & FBCTL_PEN) == 0) bus_rest(8);
+		while ((VDP_FBCTL & FBCTL_PEN) == 0) { }
 		load_pending_palette();
 	}
 	flip_pending = 0;
@@ -986,7 +880,7 @@ static void text_screen(uint16_t bg, uint16_t fg, const char *const *lines, int 
 	}
 
 	flip_wait();
-	while ((VDP_FBCTL & FBCTL_PEN) == 0) bus_rest(8);
+	while ((VDP_FBCTL & FBCTL_PEN) == 0) { }
 	VDP_CRAM[0] = bg;
 	VDP_CRAM[1] = fg;
 }
@@ -1187,12 +1081,11 @@ void *__dso_handle = 0;
 static void give_fb(void)
 {
 	MARS_ADAPTER_B = 0x00;
-	while ((MARS_INTMSK & 0x8000) != 0) bus_rest(8);
+	while ((MARS_INTMSK & 0x8000) != 0) { }
 }
 
 static void loading_screen(void)
 {
-	if (fill_running) return;
 	MARS_COMM2 = 0;
 	if (!send_cmd(CMD_OPEN_FILE, 2000000UL)) return;
 	uint32_t len = MARS_COMM8_32;

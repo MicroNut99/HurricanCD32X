@@ -29,7 +29,7 @@ grep -q '^#define CDL_TARGET_OPENLARA 1' "$HERE/cd32x/sh2/cdloader_sh2.c" \
 CART="${CART:-}"
 case "$CART" in ""|8|16) ;; *) echo "*** CART must be 8 or 16 (or unset) - stopping"; exit 1;; esac
 [ -n "$CART" ] && echo "==> cart: the $CART MB test build"
-DISC_NAME="${DISC_NAME:-HurricanP2b}"
+DISC_NAME="${DISC_NAME:-HurricanP2a}"
 echo "==> splash";      python3 "$HERE/tools/make_splash.py" "$DATA" "$HERE/build/Splash.png"
                         python3 "$HERE/tools/make_boot_image.py" "$HERE/build/Splash.png" "$ROMS/IMAGE.RAW"
                         python3 "$HERE/tools/splash_bar_colours.py" "$ROMS/IMAGE.RAW"
