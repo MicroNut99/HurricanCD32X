@@ -13,7 +13,9 @@ CD music, sound effects and a high-score table.
 - Sega Genesis / Mega Drive
 - Sega CD / Mega-CD
 - Sega 32X
-- **A 4MB RAM cart** in the 32X cartridge slot (required)
+- **A 4MB RAM cart** in the 32X cartridge slot (required), or the **8 MB / 16 MB cart**
+  ([16MB-PCB-CD32X](https://github.com/MicroNut99/16MB-PCB-CD32X)) with the `CART=8` / `CART=16`
+  build (see *Loading*)
 - A **6-button pad** (recommended). With a 3-button pad, the grenade, power line and weapon
   change (X, Y, Z) are missing, and Down + A rolls the wheel.
 
@@ -33,11 +35,62 @@ Full instructions: `docs/HURRICAN_CD32X_HANDOFF.md`. In short:
 2. `cd HurricanCD32X && bash tools/make_disc.sh`
 3. **Burn `HurricanCD32X/discs/<name>/<name>.cue`** (with its `.bin`). The build prints the
    exact path when it finishes. The `.iso` alone has no music.
+4. For the 16 MB cart: `CART=16 bash tools/make_disc.sh` (disc `discs/HurricanP2b-16MB/`;
+   `CART=8` for the 8 MB cart).
 
 ## Starting the game
 Put the RAM cart in the 32X, the disc in the Sega CD, and switch on. A loading picture with a
-bar appears while the game is copied into the cart, and again while each stage loads from the
-disc. Then the title menu appears; a minute without a button starts a recorded demo.
+bar appears while the game is copied into the cart (see *Loading*). Then the title menu appears;
+a minute without a button starts a recorded demo.
+
+## Loading
+Every stage is a pack of 0.4-1 MB on the disc. The game plays a stage from the RAM cart, so the
+pack must be copied there first.
+
+### The loading screens
+- **The title picture with a bar:** the boot. The game program and its common pack (menus,
+  fonts, sprites, sounds) are copied into the cart.
+- **"COPYING TO THE CART - START: SKIP" under the bar** (8 MB / 16 MB cart, first boot only):
+  - **What is copied:** all nine stages and the story (6.8 MB). Each pack goes into one of the
+    cart's extra 2 MB pages, with a note of what it holds at the end of the page.
+  - **Start** stops the copying. The stages not copied yet load when they are played.
+  - **Later boots** find the stages already there and copy nothing.
+- **The loading picture with a bar between stages:** the stage is read from the disc. This
+  happens:
+  - always with a 4 MB cart;
+  - with an 8 / 16 MB cart, only when the stage is not in the cart (copying skipped, or the
+    cart was used by another game meanwhile).
+- **No loading picture:** the stage is in the cart. The game checks it in about 2 seconds:
+  - the first and last 32 KB are compared with the disc, so a disc from a newer build replaces
+    an old copy;
+  - a checksum shows whether another game wrote over the page.
+
+  Then the stage starts.
+
+### Fast loading
+The Sega CD reads the disc at 150 KB a second, but the old loading reached only about 41 KB a
+second. It stopped the drive after every 32 KB and sent it back to the next sector, so the
+drive had to find its place on the disc again for every piece.
+
+Now the drive reads each file straight through:
+- The Sub-CPU keeps taking the sectors as they arrive, even while the 68000 copies the last piece
+  into the cart. They wait in a 64 KB buffer instead of being lost.
+- Each sector's number is checked. If one is missed, the drive goes back for it.
+
+Loading runs at 104-145 KB a second, close to the drive's own speed. Measured in the ares
+emulator, not yet on a console:
+
+| | Before (P2a) | Now (P2b) |
+|---|---|---|
+| a stage from the disc (stage 1) | 14.6 s | 5.3 s |
+| the common pack at boot | 37 s | 15 s |
+| first boot to the menu, blank 16 MB cart | ~65 s | ~95 s, with all stages copied |
+| later boots to the menu | ~31 s | ~30 s |
+| a stage already in the cart | - | ~2 s |
+
+With a 4 MB cart, every stage still loads from the disc, but in about a third of the time.
+With a 16 MB cart, after the first boot no stage loads from the disc at all. The extra 30
+seconds of the first boot are spent once.
 
 ## Controls (6-button pad)
 | Button | Action |
