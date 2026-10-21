@@ -28,3 +28,20 @@ Stage 1, first screen, TIMING OFF, pictures shown per second:
 | P2b | 60 | 60 |
 
 The disc's default name is now HurricanP2b (HurricanP2b-16MB with CART=16).
+
+## Loading (P2b, measured in ares)
+
+The same boot-stack and cart changes as OpenJazz R7 (OpenJazzCD32X-REV `docs/R7_FRAME_RATE.md`,
+"Loading"):
+- **The drive reads on** between 32 KB chunks, with a 64 KB read-ahead buffer while the 68000
+  copies: about 143 KB/s for a stage, against 41 KB/s before.
+- **The first boot fills the 16 MB cart** with all nine stages and the story (6.8 MB).
+  - The splash shows "COPYING TO THE CART - START: SKIP".
+  - Later boots copy nothing.
+
+| ares, blank 16 MB cart | P2a | P2b |
+|---|---|---|
+| first boot to the menu | ~65 s | ~95 s (all stages and the story copied) |
+| later boots to the menu | ~31 s | ~30 s |
+| stage 1, not in the cart | 14.6 s | 5.3 s |
+| any stage after the first boot | - | ~2 s (disc check) |
