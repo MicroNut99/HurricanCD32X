@@ -34,8 +34,15 @@
 #define MARS_CMD_CLR     (*(volatile uint16_t *)0x2000401A)
 #define MARS_COMM0       (*(volatile uint16_t *)0x20004020)
 #define MARS_COMM2       (*(volatile uint16_t *)0x20004022)
-#define MARS_COMM8       (*(volatile uint16_t *)0x20004028)
-#define MARS_COMM10      (*(volatile uint16_t *)0x2000402A)
+/* P2b: COMM8 / COMM10 carry the answer to a pad request sent ahead (pad_ask): every other use
+ * waits for that answer first, so it cannot land on an argument written here or be read as a
+ * result (the RAW_ names are for the pad's own answer) */
+#define RAW_COMM8        (*(volatile uint16_t *)0x20004028)
+static void pad_collect(uint32_t tries);
+static inline volatile uint16_t *comm16_settled(uintptr_t a) { pad_collect(40000UL); return (volatile uint16_t *)a; }
+static inline volatile uint32_t *comm32_settled(uintptr_t a) { pad_collect(40000UL); return (volatile uint32_t *)a; }
+#define MARS_COMM8       (*comm16_settled(0x20004028))
+#define MARS_COMM10      (*comm16_settled(0x2000402A))
 #define MARS_COMM12      (*(volatile uint16_t *)0x2000402C)
 #define VDP_DISPMODE     (*(volatile uint16_t *)0x20004100)
 #define VDP_FBCTL        (*(volatile uint16_t *)0x2000410A)
@@ -103,7 +110,7 @@
 #define PACK_SLOT        8       /* IMAGE8.RAW -> cart 8 * 128 KB = 0x100000 = PLAT_CART_DATA_OFFSET */
 #define CMD_CHUNK_TO_FB  51
 #define CMD_LOAD_SFX     53      /* main.c: SFX<COMM2>.BIN -> PCM chip; COMM12 = number of effects */      /* main.c: file chunk -> frame buffer (the loader's splash) */
-#define MARS_COMM8_32    (*(volatile uint32_t *)0x20004028)
+#define MARS_COMM8_32    (*comm32_settled(0x20004028))
 #define CMD_TEXT_ONOFF   52
 
 #define PPHI_HZ          23011364u
@@ -202,8 +209,6 @@ static void comm_pause(void)
 	bus_rest(128);  /* P2b: was a volatile counter on the stack: a write to SDRAM every turn */
 }
 
-static void pad_collect(uint32_t tries);
-
 static int send_cmd(uint16_t cmd, uint32_t tries)
 {
 	pad_collect(40000UL);   /* P2b: a pad request sent ahead must be answered first */
@@ -223,7 +228,7 @@ static uint16_t pad_value;
 
 static void pad_take(void)
 {
-	const uint16_t bits = MARS_COMM8;
+	const uint16_t bits = RAW_COMM8;
 	pad_value = (bits & 0xF000) == 0xF000 ? 0 : (uint16_t)(bits & 0x0FFF);
 }
 
@@ -244,6 +249,9 @@ static void pad_collect(uint32_t tries)
 		comm_pause();
 	if (MARS_COMM0 == 0) pad_take();
 }
+
+/* P2b: for code that writes the 32X communication registers itself */
+void plat_comm_settle(void) { pad_collect(40000UL); }
 
 static void take_fb(void)
 {
@@ -703,6 +711,19 @@ static void pace_before_flip(void)
 		while (vblank_count - last_flip_vblank < (uint32_t)(pace_n - 1)) { }
 	}
 	while (VDP_FBCTL & FBCTL_VBLK) bus_rest(8);
+}
+
+/* P2b (as OpenJazz J24): the time this frame will be shown - the vblank of the swap the frame
+ * pacing allows (pace_n vblanks after the last one), or the next vblank when that is past */
+uint32_t plat_frame_ms(void)
+{
+	static uint32_t last;
+	uint32_t v = last_flip_vblank + (uint32_t)pace_n;
+	if (v < vblank_count + 1) v = vblank_count + 1;
+	uint32_t ms = (uint32_t)((uint64_t)v * 1000u / 60u);
+	if (ms < last) ms = last;
+	last = ms;
+	return ms;
 }
 
 /* -------------------------------------------------------------- display */

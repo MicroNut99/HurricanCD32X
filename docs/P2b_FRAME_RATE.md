@@ -12,6 +12,14 @@ The same changes as OpenJazz R7 (OpenJazzCD32X-REV `docs/R7_FRAME_RATE.md`), in
 - **The pad is asked for ahead** (`pad_ask`, `pad_collect`): the request (CMD 48 with a waiting
   sound effect) goes out before the frame pacing wait, the answer is read at the next pad poll.
 
+- **The pad's answer is waited for** before anything else uses COMM8 / COMM0 (`plat_comm_settle`,
+  and COMM8 / COMM10 through `comm16_settled`). Without this the backdrop's scroll command
+  (`genbg_scroll`, COMM8 = scroll position, COMM0 = 62) landed on the pad's answer: every third
+  frame the game read the scroll value as the pad (no buttons), so the player lost a third of
+  his steps - the jerky movement seen in emulation with the first P2b.
+- **Steps from the time the frame is shown** (`plat_frame_ms`, as OpenJazz J24), not the time the
+  loop starts: frames shown 2 vblanks apart got 1, 2 or 3 steps (also in P2a); now always 2.
+
 Stage 1, first screen, TIMING OFF, pictures shown per second:
 
 | | ares upstream | ares `ARES_32X_TIMING=console` |

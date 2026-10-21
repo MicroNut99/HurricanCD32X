@@ -39,6 +39,12 @@ void plat_init(void);
 
 /* Free-running millisecond clock. */
 uint32_t plat_ticks_ms(void);
+/* P2b: the time (ms) the frame being made now will be shown: the vblank the frame pacing will
+ * swap it at. Steps worked out from it match the pictures' spacing on the screen. */
+uint32_t plat_frame_ms(void);
+/* P2b: before code writes the 32X communication registers itself: the pad request sent ahead
+ * is answered first (its answer uses COMM0 / COMM8 / COMM10) */
+void plat_comm_settle(void);
 
 /* Seed for the game's random numbers (replaces time(NULL)). */
 uint32_t plat_random_seed(void);

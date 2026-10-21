@@ -3147,6 +3147,7 @@ static int genbg_last = -1;
 #define GB_PRI    0x0080
 static int genbg_cmd(int sub)
 {
+	plat_comm_settle();                              /* P2b: the pad's answer first */
 	GB_COMM2 = (uint16_t)sub;
 	GB_COMM0 = 62;
 	for (uint32_t n = 0; n < 8000000u && GB_COMM0 != 0; n++) { }
@@ -3166,6 +3167,7 @@ static void genbg_load(void)
 	uint32_t size;
 	genbg_on = 0;
 	if (!genbg_want || !pack_file("GENBG.BIN", &g, &size)) return;
+	plat_comm_settle();
 	GB_COMM8L = (uint32_t)(g - plat_cart_ptr(0));
 	GB_COMM12 = 0;
 	genbg_last = -1;
@@ -3177,6 +3179,7 @@ static void genbg_scroll(void)
 	const int v = -(draw_cx / 5);                    /* Hurrican: the far picture at a fifth */
 	if (v == genbg_last) return;                     /* P1r: the Sub-CPU only when it moved */
 	genbg_last = v;
+	plat_comm_settle();
 	GB_COMM8 = (uint16_t)v;
 	GB_COMM12 = 0;
 	genbg_cmd(2);
@@ -3244,6 +3247,7 @@ static void hs_pack(uint8_t *b)
 #define HS_COMM12 (*(volatile uint16_t *)0x2000402C)
 static int hs_cmd(int cmd)
 {
+	plat_comm_settle();                              /* P2b: the pad's answer first */
 	HS_COMM0 = (uint16_t)cmd;
 	for (uint32_t n = 0; n < 8000000u && HS_COMM0 != 0; n++) { }
 	return HS_COMM0 == 0;
@@ -3251,6 +3255,7 @@ static int hs_cmd(int cmd)
 static void hs_load(void)
 {
 	uint8_t b[128];
+	plat_comm_settle();
 	HS_COMM12 = 0;
 	if (!hs_cmd(56)) { hs_defaults(); return; }      /* the backup RAM file into the Sub-CPU's buffer */
 	for (int i = 0; i < 64; i++)
@@ -3266,6 +3271,7 @@ static void hs_save(void)
 {
 	uint8_t b[128];
 	hs_pack(b);
+	plat_comm_settle();
 	for (int i = 0; i < 64; i++)
 	{
 		HS_COMM8 = (uint16_t)(b[2 * i] << 8 | b[2 * i + 1]);
@@ -3598,7 +3604,7 @@ static void run_steps(void)
 				else { gs = GS_MENU; hs_game_end(); music(TRACK_MENU); }
 				gs_t = 0;
 				s = steps;
-				last_ms = plat_ticks_ms(); acc = 0;
+				last_ms = plat_frame_ms(); acc = 0;
 			}
 			break;
 		case GS_OVER:
@@ -3709,7 +3715,7 @@ int main(int argc, char *argv[])
 
 	int attract = 0, demo_first = 1;
 	uint32_t idle_ms = 0;
-	last_ms = plat_ticks_ms();
+	last_ms = plat_frame_ms();
 	uint32_t frame = 0;
 	/* the timing line (pause menu: TIMING ON / OFF): milliseconds per frame, averaged over 16 frames */
 	enum { T_LOGIC, T_MAP, T_COPY, T_SPR, T_OVR, T_HUD, T_WAIT, T_N };
@@ -3718,8 +3724,11 @@ int main(int argc, char *argv[])
 	static char tline[64], tline2[64];
 	for (;;)
 	{
-		/* time: 60 steps a second, at most 6 a frame */
-		const uint32_t now = plat_ticks_ms();
+		/* time: 60 steps a second, at most 6 a frame. P2b: the time this frame will be shown
+		 * (plat_frame_ms, as OpenJazz J24), not the time now: the loop does not start at an even
+		 * point of the frame, so the clock now gave 1, 2 or 3 steps to frames shown 2 vblanks
+		 * apart - uneven movement on the screen */
+		const uint32_t now = plat_frame_ms();
 		uint32_t dms = now - last_ms;
 		last_ms = now;
 		if (dms > 200) dms = 200;
@@ -3748,7 +3757,7 @@ int main(int argc, char *argv[])
 			{
 				gs = GS_INTRO; gs_t = 0;
 				pad_prev = pad;
-				last_ms = plat_ticks_ms(); acc = 0;
+				last_ms = plat_frame_ms(); acc = 0;
 				continue;
 			}
 			hit = PAD_START;                    /* the end: as a button */
@@ -3835,7 +3844,7 @@ int main(int argc, char *argv[])
 		{
 			int go = menu_input(hit, pad);
 			if (go == 3) { gs = GS_CREDITS; credits_enter(); pad_prev = pad; continue; }
-			if (go == 4) { if (story_enter()) { gs = GS_STORY; gs_t = 0; } pad_prev = pad; last_ms = plat_ticks_ms(); acc = 0; continue; }
+			if (go == 4) { if (story_enter()) { gs = GS_STORY; gs_t = 0; } pad_prev = pad; last_ms = plat_frame_ms(); acc = 0; continue; }
 			/* the attract mode: a minute in the menus without a button - a random stage plays as
 			 * the demo (back to the main menu afterwards) */
 			idle_ms = pad ? 0 : idle_ms + dms;
@@ -3869,7 +3878,7 @@ int main(int argc, char *argv[])
 				}
 				gs = GS_INTRO; gs_t = 0;
 				pad_prev = pad;
-				last_ms = plat_ticks_ms(); acc = 0;
+				last_ms = plat_frame_ms(); acc = 0;
 				continue;
 			}
 			pad_prev = pad;
