@@ -47,14 +47,31 @@ a minute without a button starts a recorded demo.
 Every stage is a pack of 0.4-1 MB on the disc. The game plays a stage from the RAM cart, so the
 pack must be copied there first.
 
+### The preload (8 MB / 16 MB cart)
+With the bigger cart, the first boot copies the whole game into it, so later no stage has to come
+from the disc:
+- **What:** all nine stages and the story, 6.8 MB, in play order. The 16 MB cart has room for all
+  of it; the 8 MB cart takes what fits, and the rest loads from the disc when it is played.
+- **When:** once, on the first boot with a blank cart. It adds about
+  30 seconds: the first boot takes ~95 s to the menu (measured in the ares emulator). A stage
+  already in the cart from an older build is not copied again; it is checked against the disc
+  when it is played and replaced if it changed.
+- **On screen:** "COPYING TO THE CART - START: SKIP" under the bar on the title picture.
+- **Start** stops it. The stages not copied yet are copied the first time they are played.
+- **Later boots** see that everything is there: no copying text, nothing copied, the menu as fast
+  as a normal boot (~30 s).
+- **Playing a stage** from the cart takes about 2 seconds (the check below), no loading picture.
+- **Another game in the same cart** (OpenJazz CD32X uses the cart the same way): when its data
+  fills the pages, the preload stops where there is no room. A stage that is not in the cart is
+  read from the disc when it is played and takes the page used longest ago, so the cart fills
+  with Hurrican again as you play.
+
 ### The loading screens
 - **The title picture with a bar:** the boot. The game program and its common pack (menus,
   fonts, sprites, sounds) are copied into the cart.
-- **"COPYING TO THE CART - START: SKIP" under the bar** (8 MB / 16 MB cart, first boot only):
-  - **What is copied:** all nine stages and the story (6.8 MB). Each pack goes into one of the
-    cart's extra 2 MB pages, with a note of what it holds at the end of the page.
-  - **Start** stops the copying. The stages not copied yet load when they are played.
-  - **Later boots** find the stages already there and copy nothing.
+- **"COPYING TO THE CART - START: SKIP" under the bar** (8 MB / 16 MB cart): the preload above.
+  Each pack goes into one of the cart's extra 2 MB pages, with a note of what it holds at the end
+  of the page. Shown only while something is copied (P2a2: a later boot no longer flashes it).
 - **The loading picture with a bar between stages:** the stage is read from the disc. This
   happens:
   - always with a 4 MB cart;
