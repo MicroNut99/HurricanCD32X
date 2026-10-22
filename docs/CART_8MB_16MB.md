@@ -1,7 +1,7 @@
 # 8 MB and 16 MB cart releases (design)
 
 Hurrican CD32X on the paged SRAM cart
-([16MB-PCB-CD32X](https://github.com/MicroNut99/16MB-PCB-CD32X), rev 0.5). The mechanism is
+(the 16MB-PCB-CD32X board, rev 0.5). The mechanism is
 the one designed for Jazz, the reference:
 [OpenJazzCD32X-REV `docs/CART_8MB_16MB.md`](https://github.com/MicroNut99/OpenJazzCD32X-REV/blob/main/docs/CART_8MB_16MB.md).
 It covers the home and extended pages, the page tails, the board probe and saves with W1 = 1.

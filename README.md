@@ -14,7 +14,7 @@ CD music, sound effects and a high-score table.
 - Sega CD / Mega-CD
 - Sega 32X
 - **A 4MB RAM cart** in the 32X cartridge slot (required), or the **8 MB / 16 MB cart**
-  ([16MB-PCB-CD32X](https://github.com/MicroNut99/16MB-PCB-CD32X)) with the `CART=8` / `CART=16`
+  (the 16MB-PCB-CD32X board) with the `CART=8` / `CART=16`
   build (see *Loading*)
 - A **6-button pad** (recommended). With a 3-button pad, the grenade, power line and weapon
   change (X, Y, Z) are missing, and Down + A rolls the wheel.
