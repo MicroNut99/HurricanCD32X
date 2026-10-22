@@ -30,13 +30,37 @@ Emulators: Kega Fusion cannot emulate the 4MB RAM cart, so the game is made for 
 The music needs nothing extra: the build turns Hurrican's own music modules into CD audio tracks.
 
 ## Building
-Full instructions: `docs/HURRICAN_CD32X_HANDOFF.md`. In short:
-1. Put `Hurrican-master.zip` in the `HurricanCD32X` folder.
-2. `cd HurricanCD32X && bash tools/make_disc.sh`
-3. **Burn `HurricanCD32X/discs/<name>/<name>.cue`** (with its `.bin`). The build prints the
-   exact path when it finishes. The `.iso` alone has no music.
-4. For the 16 MB cart: `CART=16 bash tools/make_disc.sh` (disc `discs/HurricanP2a2-16MB/`;
-   `CART=8` for the 8 MB cart).
+Full instructions and the technical background: `docs/HURRICAN_CD32X_HANDOFF.md`.
+
+**What the build needs** (Linux or WSL): Chilly Willy's Sega toolchain in `/opt/toolchains/sega`,
+gcc, Python 3 with numpy and Pillow (the build installs them with `apt` if they are missing), and
+`Hurrican-master.zip` in the project folder (see *What you need*). The build unpacks the zip into
+`HurricanData/` the first time; `HURRICAN_DATA=<folder>` uses another copy of the data.
+
+**The commands** - run in the project folder; everything is made inside it, nothing outside:
+
+| Cart | Command | The disc |
+|---|---|---|
+| 4 MB | `bash tools/make_disc.sh` | `discs/HurricanP2a2/HurricanP2a2.cue` |
+| 16 MB | `CART=16 bash tools/make_disc.sh` | `discs/HurricanP2a2-16MB/HurricanP2a2-16MB.cue` |
+| 8 MB | `CART=8 bash tools/make_disc.sh` | `discs/HurricanP2a2-8MB/HurricanP2a2-8MB.cue` |
+
+For example, from WSL:
+```
+cd /mnt/s/KoboPort/sega-toolchain-12.1/sega/HurricanCD32X/CART_P2a && \
+CART=16 bash tools/make_disc.sh
+```
+
+**Options** (before `bash`, as `CART=16` above): `NOMUSIC=1` makes a disc without the music (one
+silent audio track: smaller and quicker, for emulators).
+
+**What happens:** the build converts Hurrican's graphics, stages, sounds and music modules
+(the music becomes CD audio tracks), makes the engine, the loader and the Sub-CPU program, then
+the disc image. The full log goes to `build_log.txt`; the last lines and the path of the `.cue`
+are printed at the end.
+
+**Burn the `.cue`** (with its `.bin`, disc-at-once, 80-minute CD-R). The `.iso` alone has no
+music.
 
 ## Starting the game
 Put the RAM cart in the 32X, the disc in the Sega CD, and switch on. A loading picture with a
