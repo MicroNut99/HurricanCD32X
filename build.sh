@@ -27,7 +27,14 @@ grep -q '^#define CDL_TARGET_OPENLARA 1' "$HERE/cd32x/sh2/cdloader_sh2.c" \
 # cart 0x060000, the stages kept in the cart's other pages, Sub-CPU CMD 68 (window 1's page) and
 # CMD 38's destination. Unset: the 4 MB build, unchanged. DISC_NAME: the disc's file name.
 CART="${CART:-}"
-case "$CART" in ""|8|16) ;; *) echo "*** CART must be 8 or 16 (or unset) - stopping"; exit 1;; esac
+# ED: CART=ED - the Mega EverDrive PRO as the 16 MB paged cart (CD32X BootCamp docs/12; the listener's
+# MODE1-9 turns the page writes into its window registers; pages 1-6 - page 7 is the EverDrive's own).
+#   CART=ED EDCD=1 bash build.sh      the disc + cd32x/subcpu/EDCD.32X, the launcher started from the
+#                                     EverDrive menu with the disc in the Sega CD (BOOTCAMP=<folder>,
+#                                     default ../CD32X-BootCamp)
+# Saves still go to the cart's page 1 (the EverDrive wipes its PSRAM at its menu: nothing persists yet).
+case "$CART" in ""|8|16|ED) ;; *) echo "*** CART must be 8, 16 or ED (or unset) - stopping"; exit 1;; esac
+[ "$CART" = ED ] && echo "==> cart: the Mega EverDrive PRO (16 MB, pages 1-6)"
 [ -n "$CART" ] && echo "==> cart: the $CART MB test build"
 DISC_NAME="${DISC_NAME:-HurricanP2a2}"
 echo "==> splash";      python3 "$HERE/tools/make_splash.py" "$DATA" "$HERE/build/Splash.png"
@@ -71,9 +78,11 @@ echo "==> engine";      rm -rf "$HERE"/mars/obj "$HERE"/mars/obj_cart*     # the
                         rm -f "$HERE/mars/hurrican32x.elf" "$HERE/mars/hurrican32x.bin" "$HERE/mars/OPENJAZZ.32X"
                         make -C "$HERE/mars" EXTRA_DEFS="$MUSIC_DEFS" CART="$CART"
 [ -f "$HERE/mars/OPENJAZZ.32X" ] || { echo "*** mars/OPENJAZZ.32X was not made - stopping"; exit 1; }
-echo "==> ROM check";   python3 "$HERE/cd32x/ref/openlara/tools/prep_openlara_cd.py" "$HERE/mars/OPENJAZZ.32X" "$ROMS/OPENLARA.32X"
+PREP_MODE1=""; if [ "${EDCD:-0}" = 1 ]; then PREP_MODE1="--mode1"; fi   # MODE1-1 (EDCD=1, below): the RAM jump table too
+echo "==> ROM check";   python3 "$HERE/cd32x/ref/openlara/tools/prep_openlara_cd.py" $PREP_MODE1 "$HERE/mars/OPENJAZZ.32X" "$ROMS/OPENLARA.32X"
 echo "==> SH2 loader";  cd "$HERE/cd32x/sh2"    && make -f Makefile.cdloader clean && make -f Makefile.cdloader
-echo "==> Sub-CPU";     cd "$HERE/cd32x/subcpu" && make clean && make cd CART_DEFS="${CART:+-DCART_PAGED}"
+CART_DEFS="${CART:+-DCART_PAGED}"; [ "$CART" = ED ] && CART_DEFS="-DCART_PAGED -DCART_ED"
+echo "==> Sub-CPU";     cd "$HERE/cd32x/subcpu" && make clean && make cd CART_DEFS="$CART_DEFS"
 
 ISO="$HERE/cd32x/subcpu/CDROMPlayer.iso"
 [ -f "$ISO" ] || { echo "*** $ISO was not made - stopping"; exit 1; }
@@ -91,3 +100,21 @@ cd "$HERE/cd32x/subcpu" && python3 make_mixed_cd2.py CDROMPlayer.iso "$MUS"/Trac
 echo
 echo "==> done:"
 echo "    disc: cd32x/subcpu/$DISC_NAME.cue (with its .bin)"
+
+# EDCD=1 (MODE1-1, CD32X BootCamp docs/12): EDCD.32X, made by the BootCamp's edboot/build_edcd.sh around
+# this disc's Sub-CPU program built a second time for the cartridge boot (MODE1=1 M1PAGE=1, in a copy
+# of cd32x/subcpu: the disc keeps the normal program)
+if [ "${EDCD:-0}" = 1 ]; then
+  BC="${BOOTCAMP:-$HERE/../CD32X-BootCamp}"
+  [ -f "$BC/edboot/build_edcd.sh" ] || { echo "*** EDCD=1 needs the CD32X BootCamp next to this folder (or BOOTCAMP=<folder>): not at $BC"; exit 1; }
+  echo "==> EDCD.32X: the disc started from the EverDrive PRO (cartridge boot)"
+  T=$(mktemp -d); mkdir -p "$T/subcpu/ROMS" "$T/sh2"
+  find "$HERE/cd32x/subcpu" -maxdepth 1 -type f -exec cp {} "$T/subcpu/" \;
+  cp "$HERE/cd32x/sh2/CDLOADER.32x" "$T/sh2/"
+  ( cd "$T/subcpu" && make clean > /dev/null && make CDROMPlayer.bin MODE1=1 M1CTRL0=0x8000 M1PAGE=1 CART_DEFS="$CART_DEFS" > "$T/mode1.log" 2>&1 ) \
+    || { tail -20 "$T/mode1.log"; echo "*** the MODE1 Sub-CPU program did not build"; exit 1; }
+  bash "$BC/edboot/build_edcd.sh" "$T/subcpu/CDROMPlayer.bin" "$HERE/cd32x/sh2/CDLOADER.32x" "$HERE/cd32x/subcpu/EDCD.32X"
+  rm -rf "$T"
+  echo "==> EDCD.32X: $HERE/cd32x/subcpu/EDCD.32X - copy it to the EverDrive's SD card and start it from the menu"
+  echo "    with the disc above in the Sega CD (not \"Run Mega-CD\")"
+fi
