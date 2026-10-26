@@ -29,14 +29,25 @@ grep -q '^#define CDL_TARGET_OPENLARA 1' "$HERE/cd32x/sh2/cdloader_sh2.c" \
 CART="${CART:-}"
 # ED: CART=ED - the Mega EverDrive PRO as the 16 MB paged cart (CD32X BootCamp docs/12; the listener's
 # MODE1-9 turns the page writes into its window registers; pages 1-6 - page 7 is the EverDrive's own).
-#   CART=ED EDCD=1 bash build.sh      the disc + cd32x/subcpu/EDCD_HURRICAN.32X, the launcher started from the
+#   CART=ED EDCD=1 bash build.sh      HurricanP1q_EDCD_HURRICAN + cd32x/subcpu/EDCD_HURRICAN.32X, the launcher started from the
 #                                     EverDrive menu with the disc in the Sega CD (BOOTCAMP=<folder>,
 #                                     default ../CD32X-BootCamp)
 # Saves still go to the cart's page 1 (the EverDrive wipes its PSRAM at its menu: nothing persists yet).
 case "$CART" in ""|8|16|ED) ;; *) echo "*** CART must be 8, 16 or ED (or unset) - stopping"; exit 1;; esac
 [ "$CART" = ED ] && echo "==> cart: the Mega EverDrive PRO (16 MB, pages 1-6)"
 [ -n "$CART" ] && echo "==> cart: the $CART MB test build"
-DISC_NAME="${DISC_NAME:-HurricanP1q${CART:+_cart$CART}}"
+# The names (MicroNut99's rule, 26 Oct 2026: every new .32X and bin/cue carries a unique EDCD tag, and
+# the disc names the launcher it belongs with - the EverDrive keeps each launcher's saves under its own
+# name).  An EverDrive build is HurricanP1q_EDCD_HURRICAN + EDCD_HURRICAN.32X; the 8 / 16 MB test discs
+# keep the names they were built under.  DISC_NAME overrides it - NOT NAME, which WSL fills with the
+# Windows machine's name (it made Doom's first ED disc "Mumra").
+EDCD_GAME="HURRICAN"
+EDCD_32X="EDCD_$EDCD_GAME.32X"
+if [ "$CART" = ED ]; then
+  DISC_NAME="${DISC_NAME:-HurricanP1q_EDCD_$EDCD_GAME}"
+else
+  DISC_NAME="${DISC_NAME:-HurricanP1q${CART:+_cart$CART}}"
+fi
 echo "==> splash";      python3 "$HERE/tools/make_splash.py" "$DATA" "$HERE/build/Splash.png"
                         python3 "$HERE/tools/make_boot_image.py" "$HERE/build/Splash.png" "$ROMS/IMAGE.RAW"
                         python3 "$HERE/tools/splash_bar_colours.py" "$ROMS/IMAGE.RAW"
@@ -99,14 +110,14 @@ echo "    disc: cd32x/subcpu/$DISC_NAME.cue (with its .bin)"
 if [ "${EDCD:-0}" = 1 ]; then
   BC="${BOOTCAMP:-$HERE/../CD32X-BootCamp}"
   [ -f "$BC/edboot/build_edcd.sh" ] || { echo "*** EDCD=1 needs the CD32X BootCamp next to this folder (or BOOTCAMP=<folder>): not at $BC"; exit 1; }
-  echo "==> EDCD_HURRICAN.32X: the disc started from the EverDrive PRO (cartridge boot)"
+  echo "==> $EDCD_32X: the disc started from the EverDrive PRO (cartridge boot)"
   T=$(mktemp -d); mkdir -p "$T/subcpu/ROMS" "$T/sh2"
   find "$HERE/cd32x/subcpu" -maxdepth 1 -type f -exec cp {} "$T/subcpu/" \;
   cp "$HERE/cd32x/sh2/CDLOADER.32x" "$T/sh2/"
   ( cd "$T/subcpu" && make clean > /dev/null && make CDROMPlayer.bin MODE1=1 M1CTRL0=0x8000 M1PAGE=1 ${EDCD_SAVE:+M1SAVE=$EDCD_SAVE} CART_DEFS="$CART_DEFS${EDCD_SAVE:+ -DCART_EDSAVE}" > "$T/mode1.log" 2>&1 ) \
     || { tail -20 "$T/mode1.log"; echo "*** the MODE1 Sub-CPU program did not build"; exit 1; }
-  bash "$BC/edboot/build_edcd.sh" "$T/subcpu/CDROMPlayer.bin" "$HERE/cd32x/sh2/CDLOADER.32x" "$HERE/cd32x/subcpu/EDCD_HURRICAN.32X"
+  bash "$BC/edboot/build_edcd.sh" "$T/subcpu/CDROMPlayer.bin" "$HERE/cd32x/sh2/CDLOADER.32x" "$HERE/cd32x/subcpu/$EDCD_32X"
   rm -rf "$T"
-  echo "==> EDCD_HURRICAN.32X: $HERE/cd32x/subcpu/EDCD_HURRICAN.32X - copy it to the EverDrive's SD card and start it from the menu"
+  echo "==> $EDCD_32X: $HERE/cd32x/subcpu/$EDCD_32X - copy it to the EverDrive's SD card and start it from the menu"
   echo "    with the disc above in the Sega CD (not \"Run Mega-CD\")"
 fi
