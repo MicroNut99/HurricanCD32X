@@ -104,6 +104,11 @@ echo "    disc: cd32x/subcpu/$DISC_NAME.cue (with its .bin)"
 # EDCD=1 (MODE1-1, CD32X BootCamp docs/12): EDCD.32X, made by the BootCamp's edboot/build_edcd.sh around
 # this disc's Sub-CPU program built a second time for the cartridge boot (MODE1=1 M1PAGE=1, in a copy
 # of cd32x/subcpu: the disc keeps the normal program)
+# EDCD_SAVE=1 (with EDCD=1) ED-SAVE: page 1's save area (the saves, the port's settings, page 1's cache
+# record) in the EverDrive's save bank, kept on the SD card as MEGA/gamedata/EDCD_HURRICAN.32X/bram.srm -
+# the launcher's program (CART_EDSAVE, listener M1SAVE=1, RA header); the disc is the same either way
+# (the game asks the Sub-CPU, CMD 62).  Without it the saves go to the cart's page 1, which the
+# EverDrive wipes at its menu.
 if [ "${EDCD:-0}" = 1 ]; then
   BC="${BOOTCAMP:-$HERE/../CD32X-BootCamp}"
   [ -f "$BC/edboot/build_edcd.sh" ] || { echo "*** EDCD=1 needs the CD32X BootCamp next to this folder (or BOOTCAMP=<folder>): not at $BC"; exit 1; }
@@ -111,7 +116,7 @@ if [ "${EDCD:-0}" = 1 ]; then
   T=$(mktemp -d); mkdir -p "$T/subcpu/ROMS" "$T/sh2"
   find "$HERE/cd32x/subcpu" -maxdepth 1 -type f -exec cp {} "$T/subcpu/" \;
   cp "$HERE/cd32x/sh2/CDLOADER.32x" "$T/sh2/"
-  ( cd "$T/subcpu" && make clean > /dev/null && make CDROMPlayer.bin MODE1=1 M1CTRL0=0x8000 M1PAGE=1 CART_DEFS="$CART_DEFS" > "$T/mode1.log" 2>&1 ) \
+  ( cd "$T/subcpu" && make clean > /dev/null && make CDROMPlayer.bin MODE1=1 M1CTRL0=0x8000 M1PAGE=1 ${EDCD_SAVE:+M1SAVE=$EDCD_SAVE} CART_DEFS="$CART_DEFS${EDCD_SAVE:+ -DCART_EDSAVE}" > "$T/mode1.log" 2>&1 ) \
     || { tail -20 "$T/mode1.log"; echo "*** the MODE1 Sub-CPU program did not build"; exit 1; }
   bash "$BC/edboot/build_edcd.sh" "$T/subcpu/CDROMPlayer.bin" "$HERE/cd32x/sh2/CDLOADER.32x" "$HERE/cd32x/subcpu/EDCD_HURRICAN.32X"
   rm -rf "$T"
