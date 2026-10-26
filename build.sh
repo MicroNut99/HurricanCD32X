@@ -36,7 +36,7 @@ CART="${CART:-}"
 case "$CART" in ""|8|16|ED) ;; *) echo "*** CART must be 8, 16 or ED (or unset) - stopping"; exit 1;; esac
 [ "$CART" = ED ] && echo "==> cart: the Mega EverDrive PRO (16 MB, pages 1-6)"
 [ -n "$CART" ] && echo "==> cart: the $CART MB test build"
-DISC_NAME="${DISC_NAME:-HurricanP2a2}"
+DISC_NAME="${DISC_NAME:-HurricanP2a2${CART:+_cart$CART}}"
 echo "==> splash";      python3 "$HERE/tools/make_splash.py" "$DATA" "$HERE/build/Splash.png"
                         python3 "$HERE/tools/make_boot_image.py" "$HERE/build/Splash.png" "$ROMS/IMAGE.RAW"
                         python3 "$HERE/tools/splash_bar_colours.py" "$ROMS/IMAGE.RAW"
