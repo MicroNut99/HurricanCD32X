@@ -1067,7 +1067,43 @@ int main(void)
         }
         else if (cmd == 56 || cmd == 59) {
             /* K36 - CMD 56 load / CMD 59 save the backup-RAM file.  Reply COMM12: 1 ok, 0 not. */
+#ifdef CART_EDSAVE
+            /* ED-SAVE for what Hurrican actually keeps.  Its high-score table is its only persistent
+               state, and it never used the cart's save area: hs_load / hs_save (game/p1.c) send
+               CMD 56 / 57 / 58 / 59, and 56 / 59 went through the CD BIOS's backup-RAM calls
+               (_BURAM, jsr 0x5F16) into the Sega CD's internal 8 KB backup RAM - under OpenJazz's
+               file name, "OPENJAZZ_JJ", which this port inherited.  So the ED-SAVE of CMD 61 / 62
+               (the cart save area -> bank 31) never carried the high scores at all.
+               In the EverDrive launcher's program they go to the save bank instead: save piece 12
+               (free in the ledger - CD32X BootCamp docs/02; 11 is D32XR's), through the listener's
+               window-1 route, exactly as CMD 61 does, with the page the game has mapped left as it
+               was (the listener restores the window: MODE1-9's m1_wb).  The engine does not change
+               and neither does the disc's program: the record read back is the engine's own
+               ("HSC1" at byte 0, else hs_defaults()), so a blank bank gives the default table. */
+            const uint32_t ed_hs = 0x800000 + 12u * 4096u;     /* save piece 12, in bank 31 */
+            int k, ok = 1;
+            if (cmd == 59) {
+                volatile uint8_t *wr = (volatile uint8_t *)0x0C0000;
+                for (k = 0; k < 4096; k++) wr[k] = bram_buf[k];
+                switch_banks();                                /* Word RAM -> the 68000 */
+                do_md_cmd3(MD_CMD_CHILLY_RV_MEMCPY, ed_hs, 0x200000, 4096);
+                do_md_cmd3(MD_CMD_CHILLY_RV_MEMCPY, 0x208000, ed_hs, 4096);
+                switch_banks();
+                {
+                    volatile uint8_t *cart = (volatile uint8_t *)0x0C8000;
+                    for (k = 0; k < 4096; k++)
+                        if (cart[k] != bram_buf[k]) { ok = 0; break; }
+                }
+            } else {
+                volatile uint8_t *rd = (volatile uint8_t *)0x0C8000;
+                switch_banks();
+                do_md_cmd3(MD_CMD_CHILLY_RV_MEMCPY, 0x208000, ed_hs, 4096);
+                switch_banks();
+                for (k = 0; k < 4096; k++) bram_buf[k] = rd[k];
+            }
+#else
             int ok = cmd == 56 ? bram_load() : bram_save();
+#endif
             do_md_cmd2(MD_CMD_WRITE_32X_16, 0xA1512C, ok);
             do_md_cmd2(MD_CMD_WRITE_32X_16, 0xA15120, 0);
         }
