@@ -381,7 +381,16 @@ static int pcm_load(const char *name) {           /* OL-6: SFX<level>.BIN */
 static uint8_t bram_work[0x640];
 static uint8_t bram_str[16];
 static uint8_t bram_buf[BRAM_BYTES];
-static const char bram_name[12] = "OPENJAZZ_JJ";   /* OJ-J11: OpenJazz's own file (OL-5 had OPENLARA_TR) */
+static const char bram_name[12] = "HURRICAN_HB";   /* this port's own file (26 Oct 2026: it had kept
+                                                     OpenJazz's "OPENJAZZ_JJ", inherited with the
+                                                     code, so the two titles shared one file in the
+                                                     console's 8 KB of internal backup RAM) */
+/* HB-1: only the high-score record goes in that file - 128 bytes, the engine's own layout at words
+   1984-2047 of the exchange buffer (game/p1.c HS_WORD0 = 1984).  It used to declare the whole 4 KB
+   buffer, i.e. 64 of the 128 blocks of a Sega CD's internal backup RAM, for 128 bytes of data; now
+   it declares two.  The buffer itself stays 4 KB: CMD 61 / 62 (the cart save area) use it too. */
+#define HS_BRAM_OFS 3968                /* 2 * 1984 */
+#define HS_BRAM_LEN 128
 static uint8_t bram_param[14];
 static int bram_ready = 0;
 
@@ -406,14 +415,20 @@ static int bram_load(void) {                    /* 1 = loaded, 0 = no file / no 
     int i;
     for (i = 0; i < BRAM_BYTES; i++) bram_buf[i] = 0;
     if (!bram_init()) return 0;
-    return bram_call(3, bram_name, bram_buf) >= 0 ? 1 : 0;
+    if (bram_call(3, bram_name, bram_buf) < 0) return 0;
+    /* HB-1: the file is the 128-byte record and the BIOS puts it at the buffer's start - move it to
+       where the engine reads it from (words 1984 on) and leave the rest of the buffer cleared */
+    for (i = HS_BRAM_LEN - 1; i >= 0; i--) bram_buf[HS_BRAM_OFS + i] = bram_buf[i];
+    for (i = 0; i < HS_BRAM_LEN; i++) bram_buf[i] = 0;
+    return 1;
 }
 static int bram_save(void) {
     int i;
     if (!bram_init()) return 0;
     for (i = 0; i < 11; i++) bram_param[i] = (uint8_t)bram_name[i];
     bram_param[11] = 0;                         /* normal (not protected) mode */
-    bram_param[12] = 0; bram_param[13] = BRAM_BYTES / 64;   /* blocks */
+    bram_param[12] = 0; bram_param[13] = HS_BRAM_LEN / 64;  /* HB-1: 2 blocks, not 64 */
+    for (i = 0; i < HS_BRAM_LEN; i++) bram_buf[i] = bram_buf[HS_BRAM_OFS + i];   /* the record first */
     return bram_call(4, bram_param, bram_buf) >= 0 ? 1 : 0;
 }
 
