@@ -1,0 +1,123 @@
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+hdr              0x0000000000000000 0x0000000000000038 xr
+sdram            0x0000000006000000 0x0000000000040000 xw
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+
+.header         0x0000000000000000       0x38
+                0x0000000000000000                __header_start = .
+ *(.header)
+ .header        0x0000000000000000       0x38 cdl_crt0.o
+                0x0000000000000038                __header_end = .
+                0x0000000000000038                __header_size = SIZEOF (.header)
+
+.text           0x0000000006000000     0x1000 load address 0x0000000000000038
+                0x0000000006000000                __text_start = .
+ *(.text)
+ .text          0x0000000006000000      0x820 cdl_crt0.o
+                0x0000000006000760                fast_memcpy
+                0x0000000006000770                CacheControl
+                0x0000000006000780                SetSH2SR
+                0x0000000006000818                start
+ .text          0x0000000006000820       0x54 cdloader_sh2.o
+                0x0000000006000820                tramp_master
+                0x0000000006000820                tramp_start
+                0x000000000600084a                tramp_slave
+                0x000000000600086c                tramp_mok
+                0x0000000006000870                tramp_sok
+                0x0000000006000874                tramp_end
+ *(.text.*)
+ .text.wait_cmd
+                0x0000000006000874       0x44 cdloader_sh2.o
+ .text.rd32     0x00000000060008b8       0x40 cdloader_sh2.o
+ .text.splash_bar
+                0x00000000060008f8       0xe8 cdloader_sh2.o
+ .text.pri_vbi_handler
+                0x00000000060009e0        0x4 cdloader_sh2.o
+                0x00000000060009e0                pri_vbi_handler
+ .text.pri_cmd_handler
+                0x00000000060009e4       0x10 cdloader_sh2.o
+                0x00000000060009e4                pri_cmd_handler
+ .text.sec_cmd_handler
+                0x00000000060009f4       0x10 cdloader_sh2.o
+                0x00000000060009f4                sec_cmd_handler
+ .text.sec_dma1_handler
+                0x0000000006000a04        0x4 cdloader_sh2.o
+                0x0000000006000a04                sec_dma1_handler
+ .text.memset   0x0000000006000a08       0x18 cdloader_sh2.o
+                0x0000000006000a08                memset
+ .text.memcpy   0x0000000006000a20       0x18 cdloader_sh2.o
+                0x0000000006000a20                memcpy
+ .text.memmove  0x0000000006000a38       0x18 cdloader_sh2.o
+                0x0000000006000a38                memmove
+ .text.secondary
+                0x0000000006000a50       0x64 cdloader_sh2.o
+                0x0000000006000a50                secondary
+ .text.startup.main
+                0x0000000006000ab4      0x524 cdloader_sh2.o
+                0x0000000006000ab4                main
+ .text._main    0x0000000006000fd8        0xc cdloader_sh2.o
+                0x0000000006000fd8                _main
+ *(.rodata)
+ *(.rodata.*)
+ .rodata.sh2_build_marker
+                0x0000000006000fe4       0x1b cdloader_sh2.o
+                0x0000000006000fe4                sh2_build_marker
+                0x0000000006001000                . = ALIGN (0x4)
+ *fill*         0x0000000006000fff        0x1 
+                0x0000000006001000                __text_end = .
+
+.rela.dyn       0x0000000006001000        0x0 load address 0x0000000000001038
+ .rela.header   0x0000000006001000        0x0 cdl_crt0.o
+
+.data           0x0000000006001000        0x0 load address 0x0000000000001038
+                0x0000000006001000                __data_start = .
+ *(.data)
+ .data          0x0000000006001000        0x0 cdl_crt0.o
+ .data          0x0000000006001000        0x0 cdloader_sh2.o
+ *(.data.*)
+ *(.sdata)
+ *(.sdata.*)
+                0x0000000006001000                . = ALIGN (0x4)
+                0x0000000006001000                __data_end = .
+                0x0000000000001000                __code_size = (SIZEOF (.text) + SIZEOF (.data))
+
+.bss            0x0000000006001000       0x1c load address 0x0000000000001038
+                0x0000000006001000                __bss_start = .
+ *(.bss)
+ .bss           0x0000000006001000        0x0 cdl_crt0.o
+ .bss           0x0000000006001000        0x0 cdloader_sh2.o
+ *(.bss.*)
+ .bss.splash_on
+                0x0000000006001000        0x4 cdloader_sh2.o
+ .bss._bss_end  0x0000000006001004        0x4 cdloader_sh2.o
+ .bss._bss_start
+                0x0000000006001008        0x4 cdloader_sh2.o
+ .bss._data_size
+                0x000000000600100c        0x4 cdloader_sh2.o
+                0x000000000600100c                _data_size
+ .bss._text_end
+                0x0000000006001010        0x4 cdloader_sh2.o
+ .bss.mars_swdt_ovf_count
+                0x0000000006001014        0x4 cdloader_sh2.o
+                0x0000000006001014                mars_swdt_ovf_count
+ .bss.mars_pwdt_ovf_count
+                0x0000000006001018        0x4 cdloader_sh2.o
+                0x0000000006001018                mars_pwdt_ovf_count
+ *(.sbss)
+ *(.sbss.*)
+ *(COMMON)
+                0x000000000600101c                . = ALIGN (0x4)
+                0x000000000600101c                __bss_end = .
+LOAD cdl_crt0.o
+LOAD cdloader_sh2.o
+OUTPUT(CDLOADER.elf elf32-sh)
+
+.comment        0x0000000000000000       0x12
+ .comment       0x0000000000000000       0x12 cdloader_sh2.o
+                                         0x13 (size before relaxing)
