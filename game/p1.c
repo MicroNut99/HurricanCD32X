@@ -1739,6 +1739,17 @@ typedef struct
 	uint32_t nchk;                    /* places */
 } DemoRec;
 #include "demo_data.h"
+/* HUR-NODEMO (27 Oct 2026, the owner: "Until we know more turn the demos off on Hurrican"): no demo
+ * after a minute in the menu in the EDCD build (OJ32X_CART_ED).  On the console it stopped with an SH2
+ * exception (illegal instruction in put_keyed, called from over_rect) while that demo played; ares
+ * plays all six recorded demos through.  HUR_ATTRACT=1 brings it back; the 4 / 8 / 16 MB builds keep it. */
+#ifndef HUR_ATTRACT
+#ifdef OJ32X_CART_ED
+#define HUR_ATTRACT 0
+#else
+#define HUR_ATTRACT 1
+#endif
+#endif
 #ifndef DEMO_RECS
 #define DEMO_RECS 0
 static const DemoRec demo_recs[1];
@@ -3790,7 +3801,7 @@ int main(int argc, char *argv[])
 #ifndef OJ32X_MARS
 			if (getenv("HB_ATTRACT")) idle_ms = 60000u;   /* PC check: HB_ATTRACT=1 - the attract mode at once */
 #endif
-			if (!go && idle_ms >= 60000u) { go = 2; attract = 1; }
+			if (HUR_ATTRACT && !go && idle_ms >= 60000u) { go = 2; attract = 1; }
 			if (go)
 			{
 				idle_ms = 0;
