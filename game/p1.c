@@ -3254,18 +3254,46 @@ static void hs_pack(uint8_t *b)
 	}
 	b[94] = 'B'; b[95] = (uint8_t)genbg_want;     /* P1z: the backdrop setting (bytes 94-95) */
 }
-#ifdef OJ32X_MARS
+#if defined(OJ32X_MARS) && defined(OJ32X_CART_ED)
+/* HUR-EDSAVE (27 Oct 2026, the owner: "OpenLara's way: the cart's save area, which on the EverDrive
+ * is the SD card"): the EverDrive build keeps the 128 bytes in the cart's save area as OpenLara CD32X
+ * REV keeps its saves (OL-8 / OL-9), not in the Sega CD's backup RAM.  Piece 12 of page 1's save
+ * area (cart 0x3FC000; pieces 0-9 files, 10 the port's settings, 14-15 the cart cache's).
+ * Saving: the whole 4 KB piece word by word into the Sub-CPU's buffer (CMD 58 - our 128 bytes, then
+ * zeros), then CMD 61 writes it into the save area and reads it back (port/plat_mars.c
+ * plat_save_piece: both SH2s off the cart meanwhile).  Loading: the piece read from the save area
+ * (plat_save_read).  The EverDrive launcher's program (build.sh EDCD_SAVE=1, CART_EDSAVE) keeps page
+ * 1's save area in the EverDrive's save bank, bank 31, which the EverDrive writes to the SD card as
+ * MEGA/gamedata/<the launcher>/bram.srm: CMD 61 copies into the bank, the reads come through the
+ * Sub-CPU (CMD 69 + 57).  The same piece and layout as the earlier EverDrive builds' CMD 59 route,
+ * so a table saved by them still loads.  The discs keep the backup RAM (below). */
+#define HS_PIECE 12
+int plat_save_put_word(int index, int value);                   /* port/plat_mars.c: CMD 58 */
+int plat_save_piece(int piece);                                 /* CMD 61 */
+void plat_save_read(int piece, int off, uint8_t *dst, int n);   /* the area, or the save bank */
+static void hs_load(void)
+{
+	uint8_t b[128];
+	plat_save_area_enter();
+	plat_save_read(HS_PIECE, 0, b, 128);
+	plat_save_area_leave();
+	hs_unpack(b);                                    /* no "HSC1": the default table */
+}
+static void hs_save(void)
+{
+	uint8_t b[128];
+	hs_pack(b);
+	for (int i = 0; i < 2048; i++)                   /* OpenLara's csFlushPiece: the whole piece */
+		if (!plat_save_put_word(i, i < 64 ? (b[2 * i] << 8 | b[2 * i + 1]) : 0)) { hs_status = -1; return; }
+	hs_status = plat_save_piece(HS_PIECE) ? 1 : -1;
+}
+#elif defined(OJ32X_MARS)
 #define HS_COMM0  (*(volatile uint16_t *)0x20004020)
 #define HS_COMM2  (*(volatile uint16_t *)0x20004022)
 #define HS_COMM8  (*(volatile uint16_t *)0x20004028)
 #define HS_COMM12 (*(volatile uint16_t *)0x2000402C)
 static int hs_cmd(int cmd)
 {
-#ifdef OJ32X_CART_ED
-	/* the EverDrive build: 56 / 59 copy to / from the save bank with RV = 1 (cd32x/subcpu/main.c
-	   CART_EDSAVE) - both SH2s must wait off the cart meanwhile */
-	if (cmd == 56 || cmd == 59) return plat_cmd_rv(cmd);
-#endif
 	HS_COMM0 = (uint16_t)cmd;
 	for (uint32_t n = 0; n < 8000000u && HS_COMM0 != 0; n++) { }
 	return HS_COMM0 == 0;
