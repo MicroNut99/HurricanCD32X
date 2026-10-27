@@ -29,7 +29,7 @@ grep -q '^#define CDL_TARGET_OPENLARA 1' "$HERE/cd32x/sh2/cdloader_sh2.c" \
 CART="${CART:-}"
 # ED: CART=ED - the Mega EverDrive PRO as the 16 MB paged cart (CD32X BootCamp docs/12; the listener's
 # MODE1-9 turns the page writes into its window registers; pages 1-6 - page 7 is the EverDrive's own).
-#   CART=ED EDCD=1 bash build.sh      HurricanP1q_EDCD_HURRICAN + cd32x/subcpu/EDCD_HURRICAN.32X, the launcher started from the
+#   CART=ED EDCD=1 bash build.sh      HurricanP2a2_EDCD_HURRICANP2A2 + cd32x/subcpu/EDCD_HURRICANP2A2.32X, the launcher started from the
 #                                     EverDrive menu with the disc in the Sega CD (BOOTCAMP=<folder>,
 #                                     default ../CD32X-BootCamp)
 # Saves still go to the cart's page 1 (the EverDrive wipes its PSRAM at its menu: nothing persists yet).
@@ -38,10 +38,11 @@ case "$CART" in ""|8|16|ED) ;; *) echo "*** CART must be 8, 16 or ED (or unset) 
 [ -n "$CART" ] && echo "==> cart: the $CART MB test build"
 # The names (MicroNut99's rule, 26 Oct 2026: every new .32X and bin/cue carries a unique EDCD tag, and
 # the disc names the launcher it belongs with - the EverDrive keeps each launcher's saves under its own
-# name).  The EverDrive build of P2a2 is HurricanP2a2_EDCD_HURRICAN + EDCD_HURRICAN.32X; the 4 / 8 / 16 MB
+# name).  The EverDrive build of P2a2 is HurricanP2a2_EDCD_HURRICANP2A2 + EDCD_HURRICANP2A2.32X (P1q's was
+# EDCD_HURRICAN: the two launchers and their saves stay apart); the 4 / 8 / 16 MB
 # discs keep the names they were built under.  DISC_NAME overrides it - NOT NAME, which WSL fills with the
 # Windows machine's name (it made Doom's first ED disc "Mumra").
-EDCD_GAME="HURRICAN"
+EDCD_GAME="HURRICANP2A2"
 EDCD_32X="EDCD_$EDCD_GAME.32X"
 if [ "$CART" = ED ]; then
   DISC_NAME="${DISC_NAME:-HurricanP2a2_EDCD_$EDCD_GAME}"
@@ -116,7 +117,7 @@ echo "    disc: cd32x/subcpu/$DISC_NAME.cue (with its .bin)"
 # this disc's Sub-CPU program built a second time for the cartridge boot (MODE1=1 M1PAGE=1, in a copy
 # of cd32x/subcpu: the disc keeps the normal program)
 # EDCD_SAVE=1 (with EDCD=1) ED-SAVE: page 1's save area (the saves, the port's settings, page 1's cache
-# record) in the EverDrive's save bank, kept on the SD card as MEGA/gamedata/EDCD_HURRICAN.32X/bram.srm -
+# record) in the EverDrive's save bank, kept on the SD card as MEGA/gamedata/EDCD_HURRICANP2A2.32X/bram.srm -
 # the launcher's program (CART_EDSAVE, listener M1SAVE=1, RA header); the disc is the same either way
 # (the game asks the Sub-CPU, CMD 62).  Without it the saves go to the cart's page 1, which the
 # EverDrive wipes at its menu.
