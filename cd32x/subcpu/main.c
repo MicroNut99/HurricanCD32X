@@ -277,7 +277,7 @@ static uint32_t cur_dest = 0xFFFFFFFFu;
 /* ED-SAVE (CART_EDSAVE, the EverDrive launcher's program only - build.sh EDCD_SAVE=1): page 1's save
    area (pieces 0-15, cart 0x3F0000 + piece * 4 KB) lives in the EverDrive's save bank instead - bank 31,
    kept on the SD card - which the listener (MODE1-7, M1SAVE=1) reaches as cart 0x800000: CMD 61 writes
-   it there while window 1 shows page 1, CMD 62 brings a piece of it into the 4 KB buffer for the SH2
+   it there while window 1 shows page 1, CMD 69 (62 elsewhere; P2a's genbg owns 62) brings a piece of it into the 4 KB buffer for the SH2
    (CMD 57).  The EverDrive wipes its PSRAM at its menu, so nothing in page 1 itself would outlive a
    relaunch (OpenLara CD32X EDSAVE-1; CD32X BootCamp docs/12). */
 static int ed_page = 1;                            /* what window 1 shows (1 after the boot) */
@@ -1195,8 +1195,9 @@ int main(void)
             do_md_cmd2(MD_CMD_WRITE_32X_16, 0xA15120, 0);
         }
 #ifdef CART_PAGED
-        else if (cmd == 62) {
-            /* ED-SAVE - CMD 62 "save piece in": COMM2 = a piece (0-15) -> the 4 KB buffer, which the SH2
+        else if (cmd == 69) {
+            /* ED-SAVE - CMD 69 "save piece in" (62 elsewhere - in P2a 62 is the Genesis background,
+               HUR genbg below, as in SuperTux where 62 is SET_VRAM): COMM2 = a piece (0-15) -> the 4 KB buffer, which the SH2
                reads word by word with CMD 57; COMM2 = 0x8000 asks only what this program does.  Reply
                COMM12: 1 | 0x200 (page 1's save area is in the EverDrive's save bank: read it this way,
                the cart has none).  The disc's own program answers 1: the SH2 reads the cart as before. */

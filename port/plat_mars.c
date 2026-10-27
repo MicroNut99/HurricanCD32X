@@ -611,8 +611,9 @@ void plat_mars_entry(void)
 	plat_log("PACK LOADING");
 	pack_load();   /* J18d: always Jazz CD's common pack - Holiday Hare '95 is an episode */
 	sfx_load();
-#if OJ32X_CART_MB
-	cart_fill();   /* P2b: the 16 MB cart filled on the first boot */
+#if OJ32X_CART_MB && !defined(OJ32X_CART_ED)
+	cart_fill();   /* P2b: the 16 MB cart filled on the first boot (not on the EverDrive: it clears its
+	                  memory at its menu, so every start would copy everything again) */
 #endif
 	if (OJ32X_SPLASH)
 		while (vblank_count - splash_from < OJ32X_SPLASH_HOLD) { }
@@ -1394,23 +1395,23 @@ void plat_save_area_leave(void)
 #define SAVE_AREA_LEAVE() ((void)0)
 #endif
 
-/* ---- ED-SAVE: page 1's save area in the EverDrive's save bank (cd32x/subcpu/main.c CMD 61/62,
+/* ---- ED-SAVE: page 1's save area in the EverDrive's save bank (cd32x/subcpu/main.c CMD 61/69,
  * CART_EDSAVE).  The SH2 cannot see that bank, so with page 1 in window 1 every read of the area
- * goes through the Sub-CPU: CMD 62 brings a 4 KB piece into its buffer (kept here until a write),
- * CMD 57 hands out the words.  The Sub-CPU says once (CMD 62, COMM2 = 0x8000) whether it works
+ * goes through the Sub-CPU: CMD 69 brings a 4 KB piece into its buffer (kept here until a write),
+ * CMD 57 hands out the words.  The Sub-CPU says once (CMD 69, COMM2 = 0x8000) whether it works
  * that way (0x200): the disc's own program says no and the area is read from the cart as before. */
 #define CMD_SAVE_GET  57
-#define CMD_SAVE_IN   62
+#define CMD_SAVE_IN   69     /* ED-SAVE's "piece in" (62 in the other games: here P2a's genbg owns 62) */
 static int ed_bank = -1;                 /* -1 not asked, 0 the cart, 1 the EverDrive's save bank */
 static int ed_save_bank(void)
 {
 	if (ed_bank < 0) {
 #if OJ32X_CART_MB
-		MARS_COMM2 = 0x8000;                 /* the paged Sub-CPU programs answer CMD 62 */
+		MARS_COMM2 = 0x8000;                 /* the paged Sub-CPU programs answer CMD 69 */
 		MARS_COMM12 = 0;
 		ed_bank = send_cmd(CMD_SAVE_IN, 2000000UL) && (MARS_COMM12 & 0x200) ? 1 : 0;
 #else
-		ed_bank = 0;                         /* the 4 MB disc's program has no CMD 62: the cart */
+		ed_bank = 0;                         /* the 4 MB disc's program has no CMD 69: the cart */
 #endif
 	}
 	return ed_bank;
