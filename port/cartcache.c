@@ -131,6 +131,14 @@ static void tail_write(int p)
 
 int cartcache_pages(void)
 {
+#ifdef OJ32X_CART_ED
+	/* ED-NOCACHE (27 Oct 2026): no cache pages on the EverDrive.  On the console Start froze the game
+	 * after the music stopped and before the disc turned again - in this probe and the pages' records
+	 * (page switches, the save bank's piece 15), the only work between the two.  The EverDrive wipes its
+	 * memory whenever its menu runs, so the cache could only help within a session: every stage loads
+	 * from the disc into page 1's home slot, as on the 4 MB cart (the same load the boot makes). */
+	return 2;
+#endif
 	if (!pages) {
 		pages = probe();
 		for (int p = 2; p < pages; p++) {
