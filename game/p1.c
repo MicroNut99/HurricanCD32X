@@ -3261,6 +3261,11 @@ static void hs_pack(uint8_t *b)
 #define HS_COMM12 (*(volatile uint16_t *)0x2000402C)
 static int hs_cmd(int cmd)
 {
+#ifdef OJ32X_CART_ED
+	/* the EverDrive build: 56 / 59 copy to / from the save bank with RV = 1 (cd32x/subcpu/main.c
+	   CART_EDSAVE) - both SH2s must wait off the cart meanwhile */
+	if (cmd == 56 || cmd == 59) return plat_cmd_rv(cmd);
+#endif
 	HS_COMM0 = (uint16_t)cmd;
 	for (uint32_t n = 0; n < 8000000u && HS_COMM0 != 0; n++) { }
 	return HS_COMM0 == 0;
