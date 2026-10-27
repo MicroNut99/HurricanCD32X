@@ -2238,9 +2238,13 @@ static void player_step(void)
 		if (held_l && !held_r) { pl.dir = -1; pl.xs = pl.in_liquid ? FX(-40) / 3 : FX(-20); }
 		if (held_r && !held_l) { pl.dir = 1; pl.xs = pl.in_liquid ? FX(40) / 3 : FX(20); }
 	}
-	/* aiming up: standing still, walking stops */
+	/* aiming up: standing still, walking stops.  Aiming diagonally up too (the owner, 27 Oct 2026: he
+	 * "slides on his feet" - the diagonal picture has no steps, Hurrican stands to shoot that way); left /
+	 * right still turn him.  The demos keep the rule they were made with (they walked there): a recorded
+	 * one would leave its path, and the demo player aims up at enemies while it walks */
 	pl.aim = held_u ? ((held_l || held_r) ? 1 : 2) : 0;
 	if (pl.aim == 2 && pl.state != PS_JUMP) pl.xs = 0;
+	if (pl.aim == 1 && pl.state != PS_JUMP && demo_rec < 0 && !demo) pl.xs = 0;
 
 	/* ducking */
 	if (pl.state != PS_JUMP && held_d && !held_u) { pl.state = PS_DUCK; pl.xs = 0; pl.aim = 0; }
@@ -2775,11 +2779,28 @@ static void stage_start(void)
 }
 
 /* ------------------------------------------------------------------ camera */
+/* The look-ahead: the player 30 pixels left of the middle when he looks right (and the other way round).
+ * When he turns it moves over at LOOK_STEP sixteenths of a pixel a step - 60 pixels in 0.8 s - instead of
+ * the camera's own easing taking it in a few frames (the owner, 27 Oct 2026: slow the turn's transition
+ * down).  A recorded demo keeps the old look-ahead: what the camera shows wakes the enemies, and the demo
+ * must meet them as it did when it was recorded. */
+#define LOOK_FULL (30 * 16)
+#define LOOK_STEP 20
+static int cam_look = LOOK_FULL;
+static void camera_look(int n)
+{
+	const int t = pl.dir * LOOK_FULL;
+	while (n-- > 0 && cam_look != t)
+		cam_look += cam_look < t ? (t - cam_look < LOOK_STEP ? t - cam_look : LOOK_STEP)
+		                         : -(cam_look - t < LOOK_STEP ? cam_look - t : LOOK_STEP);
+}
 static void camera_follow(int snap)
 {
 	/* the player a little left of the middle when he looks right (and the other way round),
 	 * a little below the middle; eased */
-	int tx = ((pl.x >> 8) + 35) / 2 - SCREEN_W / 2 + pl.dir * 30;
+	if (snap) cam_look = pl.dir * LOOK_FULL;
+	const int look = demo_rec >= 0 ? pl.dir * 30 : cam_look / 16;
+	int tx = ((pl.x >> 8) + 35) / 2 - SCREEN_W / 2 + look;
 	int ty = ((pl.y >> 8) + 40) / 2 - VIEW_H / 2 - 10 - HUD_H / 2;   /* the middle of the level's part */
 	if (cam_lock) { tx = cam_lock_x / 2; ty = cam_lock_y / 2; }
 	cam_lock_held = cam_lock;
@@ -3549,7 +3570,7 @@ static void after_steps(void)
 {
 	if (demo_rec < 0)
 	{
-		if (gs == GS_PLAY || gs == GS_INTRO) camera_follow(0);
+		if (gs == GS_PLAY || gs == GS_INTRO) { camera_look(steps); camera_follow(0); }
 		world_activate();
 	}
 }
