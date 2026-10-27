@@ -90,8 +90,11 @@
 #endif
 
 /* BOOT TEST SWITCH (J4c3): 1 = the boot test screen is shown and waits for Start;
- * 0 = the checks still run, but the screen only appears (and waits) when one FAILS -
- * otherwise the game starts straight after the splash. */
+ * 0 = never shown (27 Oct 2026, the owner: "This boot test screen needs to be removed from
+ * Hurrican").  A cart that failed or a data pack that is missing stops the game on the red screen
+ * with the reason; bad chunks are only logged; the C++ checks only run with 1 (the EverDrive
+ * build's heap is 4 KB - ED-SAVE's buffer took the other 4 KB - and its "C++ NEW/DELETE" check
+ * failed there, which is what showed the screen; Hurrican itself allocates nothing). */
 #ifndef OJ32X_BOOT_TEST
 #define OJ32X_BOOT_TEST 0
 #endif   /* frames at 60 Hz = 2 s */
@@ -126,22 +129,31 @@ static volatile uint16_t flip_target;
 static uint16_t pending_pal[256];
 static volatile uint16_t pending_shift;
 #define VDP_SHIFT_REG (*(volatile uint16_t *)0x20004102)
-static void load_pending_palette(void)
+/* ED-ISR (EverDrive build only): the interrupt handlers live in SDRAM, not in the cart.  The console
+ * answers an SH2 cart read with garbage while the 68000 holds RV = 1 (CD32X BootCamp docs/05,
+ * edsave3), and an interrupt can come while a command's copy is under way: the vblank handler ran
+ * from the cart during CMD 56's copy (ares with that rule modelled, 27 Oct 2026). */
+#ifdef OJ32X_CART_ED
+#define ED_SDRAM_CODE __attribute__((section(".data.sdram"), noinline))
+#else
+#define ED_SDRAM_CODE
+#endif
+ED_SDRAM_CODE static void load_pending_palette(void)
 {
 	pal_pending = 0;
 	VDP_SHIFT_REG = pending_shift;
 	for (int i = 0; i < 256; ++i) VDP_CRAM[i] = pending_pal[i];
 }
-void pri_vbi_handler(void)
+ED_SDRAM_CODE void pri_vbi_handler(void)
 {
 	vblank_count++;
 	vblank_wtcnt = SH2_WTCNT_R;
 	/* the swap happens at the vblank: its palette goes in now, before the picture is shown */
 	if (flip_pending && pal_pending && (VDP_FBCTL & FBCTL_FS) == flip_target) load_pending_palette();
 }
-void pri_cmd_handler(void) { MARS_CMD_CLR = 0; }
-void sec_cmd_handler(void) { MARS_CMD_CLR = 0; }
-void sec_dma1_handler(void) { }
+ED_SDRAM_CODE void pri_cmd_handler(void) { MARS_CMD_CLR = 0; }
+ED_SDRAM_CODE void sec_cmd_handler(void) { MARS_CMD_CLR = 0; }
+ED_SDRAM_CODE void sec_dma1_handler(void) { }
 
 /* J10: the slave SH2 draws half of the level picture (plat_parallel). The job lives in SDRAM
  * and both SH2s use it through the cache-through address (0x26xxxxxx), so neither sees a stale
@@ -177,6 +189,25 @@ static void sdram_wait(volatile uint16_t *reg16, volatile int *flag, volatile in
 	}
 	__asm__ volatile ("ldc %0,sr" : : "r"(sr));
 }
+
+#ifdef OJ32X_CART_ED
+/* ED-ISR: the master's wait with the command itself written after the mask - between writing COMM0
+ * and masking, an interrupt could otherwise come just as the Sub-CPU starts the copy */
+__attribute__((section(".data.sdram"), noinline))
+static void sdram_send(uint16_t cmd)
+{
+	uint32_t sr, masked;
+	__asm__ volatile ("stc sr,%0" : "=r"(sr));
+	masked = sr | 0xF0u;
+	__asm__ volatile ("ldc %0,sr" : : "r"(masked));
+	MARS_COMM0 = cmd;
+	for (int32_t n = 0; n < 4000000; n++) {          /* sdram_wait's bound */
+		if (MARS_COMM0 == 0) break;
+		for (volatile int32_t k = 0; k < 64; k++) {}
+	}
+	__asm__ volatile ("ldc %0,sr" : : "r"(sr));
+}
+#endif
 
 void secondary(void)
 {
@@ -234,11 +265,22 @@ static int send_cmd_rv(uint16_t cmd, uint32_t tries)
 	JOB->parked = 0;
 	JOB->park = 1;
 	for (uint32_t n = 0; n < 4000000UL && !JOB->parked; n++) { for (volatile int k = 0; k < 64; k++) {} }
+#ifdef OJ32X_CART_ED
+	sdram_send(cmd);
+#else
 	MARS_COMM0 = cmd;
 	sdram_wait(&MARS_COMM0, NULL, NULL);
+#endif
 	JOB->park = 0;
 	return MARS_COMM0 == 0;
 }
+
+#ifdef OJ32X_CART_ED
+/* ED-HS: for game/p1.c - its high scores (CMD 56 / 59) go to the EverDrive's save bank in this
+ * build, a copy with RV = 1 like the cart commands, so they wait the same way (it sent them with a
+ * plain busy-wait in the cart, interrupts on: the vblank handler ran from the cart mid-copy) */
+int plat_cmd_rv(int cmd) { return send_cmd_rv((uint16_t)cmd, 8000000UL); }
+#endif
 
 static void take_fb(void)
 {
@@ -1043,19 +1085,6 @@ static void boot_test(void)
 	              CART_BYTES[0x3C0] == 'O' && CART_BYTES[0x3C1] == 'p';
 	line_add(l_cart, "CART READ: ", cart_ok, "");
 
-	line_add(l_ctor, "C++ CONSTRUCTORS: ", oj32x_test_ctor(), "");
-	line_add(l_new, "C++ NEW/DELETE: ", oj32x_test_new(), "");
-
-	/* if the throw is not caught, the C++ runtime calls abort(): the blue end screen then
-	   shows this as its last log line */
-	plat_log("EXCEPTION TEST: THROWING");
-	int t = oj32x_test_throw();
-	plat_log("EXCEPTION TEST: DONE");
-	hex(tmp, (uint32_t)t, 4);
-	line_add(l_throw, "C++ EXCEPTIONS: ", t == 0x0123, tmp);
-
-	strcpy(l_heap, heap_line());
-
 	/* J4c: the data pack */
 	if (pack_count() > 0)
 	{
@@ -1070,10 +1099,29 @@ static void boot_test(void)
 		strncat(l_pack, last_log, 40);
 	}
 
-	/* OJ32X_BOOT_TEST 0: no screen and no Start when every check is OK */
-	if (!OJ32X_BOOT_TEST && cart_ok && oj32x_test_ctor() && oj32x_test_new() && t == 0x0123 &&
-	    pack_count() > 0 && pack_bad_chunks == 0)
+	/* OJ32X_BOOT_TEST 0: no screen and no Start; only what stops the game is said, on the red
+	 * screen.  The C++ checks are not run (Hurrican is C: nothing is thrown or allocated; the
+	 * throw alone took 2.3 KB of the EverDrive build's 4 KB heap) */
+	if (!OJ32X_BOOT_TEST)
+	{
+		if (!cart_ok) plat_fatal(l_cart);
+		if (pack_count() <= 0) plat_fatal(l_pack);
+		if (pack_bad_chunks) plat_log(l_pack);
 		return;
+	}
+
+	line_add(l_ctor, "C++ CONSTRUCTORS: ", oj32x_test_ctor(), "");
+	line_add(l_new, "C++ NEW/DELETE: ", oj32x_test_new(), "");
+
+	/* if the throw is not caught, the C++ runtime calls abort(): the blue end screen then
+	   shows this as its last log line */
+	plat_log("EXCEPTION TEST: THROWING");
+	int t = oj32x_test_throw();
+	plat_log("EXCEPTION TEST: DONE");
+	hex(tmp, (uint32_t)t, 4);
+	line_add(l_throw, "C++ EXCEPTIONS: ", t == 0x0123, tmp);
+
+	strcpy(l_heap, heap_line());
 
 	/* live screen: pad + clock, until Start */
 	uint16_t pad = 0;

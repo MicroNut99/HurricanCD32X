@@ -186,6 +186,9 @@ void plat_packs_ready(void);
  *                        that is the save area: only pieces 14 and 15 are used this way.
  *   plat_save_area_enter / _leave  map page 1 around a save-area access, then back */
 int plat_cart_page(int page);
+#ifdef OJ32X_CART_ED
+int plat_cmd_rv(int cmd);     /* a Sub-CPU command that copies with RV = 1: both SH2s wait off the cart */
+#endif
 int plat_cart_page_now(void);
 int32_t plat_pack_open(int id);
 int32_t plat_load_pack_at(int id, uint32_t cart_offset, uint32_t max_bytes);
