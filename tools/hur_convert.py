@@ -738,7 +738,15 @@ def main():
         entries.append(("creditfont.png", 11, 11, frames, False))
     sfile = sprite_file(entries)
     rpal = b"".join(struct.pack(">H", to32x(c)) for c in palette[:1 + len(res_palette)])
-    total = write_pack(os.path.join(out_dir, "IMAGE8.RAW"), [("RSPRITES.BIN", sfile), ("PALRES.BIN", rpal)], RESIDENT_MAX)
+    # HUR-MENUBG (27 Oct 2026): stage 1's Genesis backdrop behind the menus - the same picture as its
+    # GENBG.BIN (stage_pack below), kept in the resident pack so the menu has it whatever stage is loaded
+    rfiles = [("RSPRITES.BIN", sfile), ("PALRES.BIN", rpal)]
+    if 1 in GBG_STAGES and 1 in GBG_STAGE_PICTURE and os.path.exists(os.path.join(tdir, GBG_STAGE_PICTURE[1][0])):
+        pname, how = GBG_STAGE_PICTURE[1]
+        mbg, mtiles = genesis_bg(_gbg_recolour(load_rgba(os.path.join(tdir, pname))[0], how), pname.split(".")[0] + "_" + how)
+        rfiles.append(("MENUBG.BIN", mbg))
+        print("  menu backdrop: stage 1's (%s in %s), %d tiles (%d KB)" % (pname, how, mtiles, len(mbg) // 1024))
+    total = write_pack(os.path.join(out_dir, "IMAGE8.RAW"), rfiles, RESIDENT_MAX)
     print("  resident pack: %d KB - %d pictures, %d frames, %d colours" % (total // 1024, len(entries), sum(len(e[3]) for e in entries), len(res_palette)))
 
     for s in stages:
