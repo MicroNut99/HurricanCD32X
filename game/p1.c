@@ -3089,6 +3089,7 @@ static void load_stage(int n)
 	if (n != stage_in_cart)
 	{
 		stage_in_cart = 0;
+		genbg_off();                    /* HUR-BGOFF: the loading screen's black is see-through (as the 4 MB load) */
 		len = cart_pack(PACK_LEVEL_ID0 + n, &stage_off);
 		stage_page = plat_cart_page_now();
 	}
@@ -3150,6 +3151,11 @@ static void load_stage(int n)
 static int genbg_on, genbg_want = 1;     /* P1z: on at start; only stages 1 and 7 have one (tools/hur_convert.py
                                             GBG_STAGES) - elsewhere PAUSE - BACKDROP changes nothing */
 static int genbg_last = -1;
+/* HUR-MENUBG (27 Oct 2026, the owner: "Make the background for the Start menu always be the background for
+ * Level 1 - make sure it loads every time"): stage 1's backdrop behind the menus, whatever PAUSE - BACKDROP
+ * says - MENUBG.BIN in the resident pack (tools/hur_convert.py: stage 1's GENBG.BIN), brought up whenever
+ * the menu shows (genbg_menu 0: not up since the last stage, the story or the loading screen) */
+static int genbg_menu;
 #ifdef OJ32X_MARS
 #define GB_COMM0  (*(volatile uint16_t *)0x20004020)
 #define GB_COMM2  (*(volatile uint16_t *)0x20004022)
@@ -3171,22 +3177,45 @@ static int genbg_cmd(int sub)
 }
 static void genbg_off(void)
 {
+	genbg_menu = 0;
 	if (!genbg_on) return;
 	genbg_cmd(0);
 	genbg_on = 0;
 	palette[0] &= 0x7FFF;
 	GB_DISPMODE = (uint16_t)(GB_DISPMODE & ~GB_PRI);
 }
-static void genbg_load(void)
+/* a backdrop file of the mounted packs onto the Genesis (CMD 62); 1: it is up */
+static int genbg_show(const char *name)
 {
 	const uint8_t *g;
 	uint32_t size;
-	genbg_on = 0;
-	if (!genbg_want || !pack_file("GENBG.BIN", &g, &size)) return;
+	if (!pack_file(name, &g, &size)) return 0;
 	GB_COMM8L = (uint32_t)(g - plat_cart_ptr(0));
 	GB_COMM12 = 0;
 	genbg_last = -1;
-	if (genbg_cmd(1) && GB_COMM12 == 1) { genbg_on = 1; palette[0] |= 0x8000; GB_DISPMODE = (uint16_t)(GB_DISPMODE | GB_PRI); }
+	if (genbg_cmd(1) && GB_COMM12 == 1) { genbg_on = 1; palette[0] |= 0x8000; GB_DISPMODE = (uint16_t)(GB_DISPMODE | GB_PRI); return 1; }
+	return 0;
+}
+/* HUR-BGOFF (27 Oct 2026, the owner: "Turn OFF the background automatically for 2,3,4,5,6,8,9"): what is up
+ * goes first - the 8 / 16 MB and EverDrive loads did not take it down (only the 4 MB one did), so stage 1's
+ * backdrop (or the menu's) stayed behind the stages that have none, and PAUSE - BACKDROP could not turn it
+ * off there.  Then the stage's own, if it has one (stages 1 and 7) and PAUSE - BACKDROP is on. */
+static void genbg_load(void)
+{
+	genbg_off();
+	if (genbg_want) genbg_show("GENBG.BIN");
+}
+/* HUR-MENUBG: the menus' backdrop (stage 1's), once each time the menu comes up */
+static void genbg_menu_up(void)
+{
+	if (genbg_menu)
+	{
+		if (genbg_on) { palette[0] |= 0x8000; GB_DISPMODE = (uint16_t)(GB_DISPMODE | GB_PRI); }   /* kept up */
+		return;
+	}
+	genbg_off();
+	genbg_menu = 1;
+	genbg_show("MENUBG.BIN");
 }
 static void genbg_scroll(void)
 {
@@ -3199,8 +3228,9 @@ static void genbg_scroll(void)
 	genbg_cmd(2);
 }
 #else
-static void genbg_off(void) { genbg_on = 0; }
+static void genbg_off(void) { genbg_on = 0; genbg_menu = 0; }
 static void genbg_load(void) { genbg_on = 0; }
+static void genbg_menu_up(void) { }
 static void genbg_scroll(void) { }
 #endif
 
@@ -3850,6 +3880,7 @@ int main(int argc, char *argv[])
 		}
 		if (gs == GS_MENU)
 		{
+			genbg_menu_up();                    /* HUR-MENUBG: stage 1's backdrop behind the menus */
 			int go = menu_input(hit, pad);
 			if (go == 3) { gs = GS_CREDITS; credits_enter(); pad_prev = pad; continue; }
 			if (go == 4) { if (story_enter()) { gs = GS_STORY; gs_t = 0; } pad_prev = pad; last_ms = plat_ticks_ms(); acc = 0; continue; }
